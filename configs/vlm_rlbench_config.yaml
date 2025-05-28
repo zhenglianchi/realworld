@@ -1,0 +1,36 @@
+env_name: vlm_rlbench
+json_path: ./tmp/state_front.json
+planner:
+  stop_threshold: 0.001
+  savgol_polyorder: 3
+  savgol_window_size: 20
+  obstacle_map_weight: 1
+  max_steps: 5
+  obstacle_map_gaussian_sigma: 10
+  target_map_weight: 2
+  stop_criteria: no_nearby_equal
+  target_spacing: 1
+  max_curvature: 3
+  pushing_skip_per_k: 5
+
+visualizer:
+  save_dir: ./visualizations
+  quality: low
+  map_size: 100
+
+lmp_config:
+  env:
+    map_size: 100
+    num_waypoints_per_plan: 10000  # set to a large number since we only do open loop for sim
+    max_plan_iter: 1
+    visualize: True
+  lmps:
+    vision_prompt_fname: action_state
+    planner_prompt_fname : planner_mode
+    vision_model: qwen2.5-vl-72b-instruct
+    max_tokens: 2048
+    temperature: 0
+    query_prefix: "# Query : "
+    query_suffix: "."
+    stop: "# done"
+    load_cache: True

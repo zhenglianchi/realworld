@@ -1,0 +1,12 @@
+# ninja log v5
+1	45996	1745670994034413791	/home/zlc/anygrasp_sdk/pointnet2/build/temp.linux-x86_64-3.9/pointnet2/_ext_src/src/ball_query_gpu.o	818395ae5bbb4ea2
+1	45998	1745670994034413791	/home/zlc/anygrasp_sdk/pointnet2/build/temp.linux-x86_64-3.9/pointnet2/_ext_src/src/cylinder_query_gpu.o	4404a8fc3eb9bc2d
+1	45998	1745670994042413703	/home/zlc/anygrasp_sdk/pointnet2/build/temp.linux-x86_64-3.9/pointnet2/_ext_src/src/group_points_gpu.o	42442f6f5d51554f
+2	46008	1745670994054413572	/home/zlc/anygrasp_sdk/pointnet2/build/temp.linux-x86_64-3.9/pointnet2/_ext_src/src/interpolate_gpu.o	aec311c9b01f537a
+3	58546	1745671006574278983	/home/zlc/anygrasp_sdk/pointnet2/build/temp.linux-x86_64-3.9/pointnet2/_ext_src/src/sampling.o	2cb2226a90d0913c
+1	61815	1745671009850244658	/home/zlc/anygrasp_sdk/pointnet2/build/temp.linux-x86_64-3.9/pointnet2/_ext_src/src/cylinder_query.o	189847a13ceef027
+1	64009	1745671012046221855	/home/zlc/anygrasp_sdk/pointnet2/build/temp.linux-x86_64-3.9/pointnet2/_ext_src/src/group_points.o	c0a04ae52accca62
+1	64216	1745671012258219664	/home/zlc/anygrasp_sdk/pointnet2/build/temp.linux-x86_64-3.9/pointnet2/_ext_src/src/ball_query.o	372bf83acf8becef
+1	64334	1745671012374218467	/home/zlc/anygrasp_sdk/pointnet2/build/temp.linux-x86_64-3.9/pointnet2/_ext_src/src/interpolate.o	f42f0ce6f29f7208
+1	68909	1745671016954171486	/home/zlc/anygrasp_sdk/pointnet2/build/temp.linux-x86_64-3.9/pointnet2/_ext_src/src/bindings.o	2b1b71a8accd14fa
+45997	72718	1745671020762132968	/home/zlc/anygrasp_sdk/pointnet2/build/temp.linux-x86_64-3.9/pointnet2/_ext_src/src/sampling_gpu.o	a58dbbf4f8e82553

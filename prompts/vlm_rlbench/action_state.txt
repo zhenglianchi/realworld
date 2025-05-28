@@ -1,0 +1,261 @@
+# The gripper from 1 to 0 is released, and from 0 to 1 is grasped, If the gripper remains unchanged, it is default.
+# The target_velocity defaults to 1
+# The target_rotation defaults to the opposite direction of the normal of the object
+# The affordance_map is set to 1 at the position that need to be moved
+# The avoidance_map is set to 1 at the position that need to be avoided
+
+Variable Descriptions:
+    obs_dict["occupancy_map"] # The voxel_map represents an occupancy map in the voxel frame
+    obs_dict["name"] # object name
+    obs_dict["position"] # The position represents the center of the object in the voxel frame, center_x, center_y, center_z = object['position']
+    obs_dict["aabb"] # The aabb represents minimum and maximum coordinates in the voxel frame, (min_x, min_y, min_z), (max_x, max_y, max_z) = object['aabb']
+    obs_dict["_position_world"] # The _position_world represents the center of the object in the world frame
+    obs_dict["_point_cloud_world"] # The _point_cloud_world represents its original point cloud map in the world frame
+    obs_dict["normal"] # The normal represents the mean surface normal of the object in the world frame
+    obs_dict["translation"] # grasnpnet generated grasp translation in the world frame
+    obs_dict["quat"] # grasnpnet generated grasp quat in the world frame
+
+Function Descriptions:
+    Function cm2index(cm, direction): Used to convert centimeters to voxel indices.
+    Function set_voxel_by_radius(voxel_map, voxel_xyz, radius_cm=0, value=1): given a 3D np array, set the value of the voxel at voxel_xyz to value. If radius is specified, set the value of all voxels within the radius to value.
+    Function vec2quat(vec): Used to convert a normal vector to a quaternion.
+
+Some external library APIs:
+    fixed_vars = {
+        "np": np,
+        "euler2quat": transforms3d.euler.euler2quat,
+        "quat2euler": transforms3d.euler.quat2euler,
+        "qinverse": transforms3d.quaternions.qinverse,
+        "qmult": transforms3d.quaternions.qmult,
+    }
+
+
+{
+    "Objects" : ["blue block", "yellow block", "mug"],
+    "Moves" : ["grasp","move"],
+    "Query" : "place the blue block on the yellow block, and avoid the mug at all time.",
+    "Planner" : ["grasp the blue block at a quarter of the speed while keeping at least 2cm away from the mug", "move to 2cm on top of the yellow block while keeping at least 2cm away from the mug", "open gripper"],
+    "Action" : "grasp the blue block at a quarter of the speed",
+    "movable" : "gripper",
+    "affordable" : {
+        "object":"blue_block",
+        "translation":"object['translation']",
+        "x": "translation[0]", 
+        "y": "translation[1]", 
+        "z": "translation[2]", 
+        "target_affordance":1,
+        "set": "affordance_map[x, y, z] = 1",
+        "move" : "grasp"
+    },
+    "avoid" : {
+        "set":"default"
+    },
+    "gripper": {
+        "object":"blue_block",
+        "center_x, center_y, center_z":"object['position']",
+        "(min_x, min_y, min_z), (max_x, max_y, max_z)":"object['aabb']",
+        'x':'center_x',
+        'y':'center_y',
+        'z':'center_z',
+        "radius_cm": 0.5,
+        "value":0,
+        "set":"set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)"
+    },
+    "rotation": {
+        "object":"blue_block",
+        "target_rotation":"object['quat']",
+        "set":"rotation_map[:, :, :] = target_rotation"
+    },
+    "velocity": {
+        "target_velocity":0.25,
+        "set":"velocity_map[:] = target_velocity"
+    }
+}
+
+{
+    "Objects" : ["blue block", "yellow block", "mug"],
+    "Moves" : ["grasp","move"],
+    "Query" : "place the blue block on the yellow block, and avoid the mug at all time.",
+    "Planner" : ["grasp the blue block at a quarter of the speed while keeping at least 2cm away from the mug", "move to 5cm on top of the yellow block while keeping at least 2cm away from the mug", "open gripper"],
+    "Action" : "move to 5cm on top of the yellow block while keeping at least 2cm away from the mug",
+    "movable" : "gripper",
+    "affordable" : {
+        "object":"yellow_block",
+        "center_x, center_y, center_z":"object['position']",
+        "(min_x, min_y, min_z), (max_x, max_y, max_z)":"object['aabb']",
+        "x":"center_x",
+        "y":"center_y",
+        "z":"max_z + cm2index(5, 'z')",
+        "target_affordance":1,
+        "set":"affordance_map[x, y, z] = target_affordance",
+        "move" : "move"
+    },
+    "avoid" : {
+        "object":"mug",
+        "center_x, center_y, center_z":"object['position']",
+        "(min_x, min_y, min_z), (max_x, max_y, max_z)":"object['aabb']",
+        "x":"center_x",
+        "y":"center_y",
+        "z":"center_z",object = object_state[rotation_var]["obs"]
+                target_rotation = eval(rotation["quat"])
+        "radius_cm": 2,
+        "value":1,
+        "set":"set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)"
+    },
+    "gripper": {
+        "set":"default"
+    },
+    "rotation": {
+        "set": "default"
+    },
+    "velocity": {
+        "set":"default"
+    }
+}
+
+{
+    "Objects" : ["blue block", "yellow block", "mug"],
+    "Moves" : ["grasp","move"],
+    "Query" : "place the blue block on the yellow block, and avoid the mug at all time.",
+    "Planner" : ["grasp the blue block at a quarter of the speed while keeping at least 2cm away from the mug", "move to 5cm on top of the yellow block while keeping at least 2cm away from the mug", "open gripper"],
+    "Action" : "open gripper",
+    "movable" : "gripper",
+    "affordable" : {
+        "set":"default"
+    },
+    "avoid" : {
+        "set":"default"
+    },
+    "gripper": {
+        "set":"gripper_map[:, :, :] = 1"
+    },
+    "rotation": {
+        "set":"default"
+    },
+    "velocity": {
+        "set":"default"
+    }
+}
+
+{
+    "Objects" : ["steak", "grill", "plate"],
+    "Moves" : ["grasp","move"],
+    "Query" : "Take the steak out of the grill and put it flat on the plate.",
+    "Planner" : ["grasp the steak", "move to 10cm on top of the plate", "rotate the gripper to be 45 degrees slanted relative to the plate", "open gripper"],
+    "Action" : "grasp the steak",
+    "movable" : "gripper",
+    "affordable" : {
+        "object":"steak",
+        "translation":"object['translation']",
+        "x": "translation[0]", 
+        "y": "translation[1]", 
+        "z": "translation[2]", 
+        "target_affordance":1,
+        "set": "affordance_map[x, y, z] = 1",
+        "move" : "grasp"
+    },
+    "avoid" : {
+        "set":"default"
+    },
+    "gripper": {
+        "object":"steak",
+        "center_x, center_y, center_z":"object['position']",
+        "(min_x, min_y, min_z), (max_x, max_y, max_z)":"object['aabb']",
+        "x":"center_x",
+        "y":"center_y",
+        "z":"center_z",
+        "radius_cm": 0.5,
+        "value":0,
+        "set":"set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)"
+    },
+    "rotation": {
+        "object":"steak",
+        "target_rotation":"object['quat']",
+        "set":"rotation_map[:, :, :] = target_rotation"
+    },
+    "velocity": {
+        "set":"default"
+    }
+}
+
+{
+    "Objects" : ["steak", "grill", "plate"],
+    "Moves" : ["grasp","move"],
+    "Query" : "Take the steak out of the grill and put it flat on the plate.",
+    "Planner" : ["grasp the steak", "move to 10cm on top of the plate", "rotate the gripper to be 45 degrees slanted relative to the plate", "open gripper"],
+    "Action" : "move to 10cm on top of the plate",
+    "movable" : "gripper",
+    "affordable" : {
+        "object":"plate",
+        "center_x, center_y, center_z":"object['position']",
+        "(min_x, min_y, min_z), (max_x, max_y, max_z)":"object['aabb']",
+        "x":"center_x",
+        "y":"center_y",
+        "z":"max_z + cm2index(10, 'z')",
+        "target_affordance":1,
+        "set":"affordance_map[x, y, z] = target_affordance",
+        "move" : "move"
+    },
+    "avoid" : {
+        "set":"default"
+    },
+    "gripper": {
+        "set":"default"
+    },
+    "rotation": {
+        "set": "default"
+    },
+    "velocity": {
+        "set":"default"
+    }
+}
+
+{
+    "Objects" : ["steak", "grill", "plate"],
+    "Moves" : ["grasp","move"],
+    "Query" : "Take the steak out of the grill and put it flat on the plate.",
+    "Planner" : ["grasp the steak", "move to 10cm on top of the plate", "rotate the gripper to be 45 degrees slanted relative to the plate", "open gripper"],
+    "Action" : "rotate the gripper to be 45 degrees slanted relative to the plate",
+    "movable" : "gripper",
+    "affordable" : {
+        "set":"default"
+    },
+    "avoid" : {
+        "set":"default"
+    },
+    "gripper": {
+        "set":"default"
+    },
+    "rotation": {
+        "object":"plate",
+        "target_rotation":"object['quat']",
+        "set":"rotation_map[:, :, :] = target_rotation"
+    },
+    "velocity": {
+        "set":"default"
+    }
+}
+
+{
+    "Objects" : ["steak", "grill", "plate"],
+    "Moves" : ["grasp","move"],
+    "Query" : "Take the steak out of the grill and put it flat on the plate.",
+    "Planner" : ["grasp the steak", "move to 10cm on top of the plate", "rotate the gripper to be 45 degrees slanted relative to the plate", "open gripper"],
+    "Action" : "open gripper",
+    "movable" : "gripper",
+    "affordable" : {
+        "set":"default"
+    },
+    "avoid" : {
+        "set":"default"
+    },
+    "gripper": {
+        "set":"gripper_map[:, :, :] = 1"
+    },
+    "rotation": {
+        "set":"default"
+    },
+    "velocity": {
+        "set":"default"
+    }
+}

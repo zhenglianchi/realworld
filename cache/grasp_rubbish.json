@@ -1,0 +1,39 @@
+{
+    "Objects": ["bin", "rubbish", "tomato", "tomato1"], 
+    "Query": "pick up the rubbish and leave it in the trash can", 
+    "Planner": ["grasp the rubbish", "move to the top of the bin", "open gripper"], 
+    "Action": "grasp the rubbish", 
+    "movable": "gripper", 
+    "Moves" : ["grasp","move"],
+    "affordable": {
+        "object": "rubbish", 
+        "translation":"object['translation']",
+        "x": "translation[0]", 
+        "y": "translation[1]", 
+        "z": "translation[2]", 
+        "target_affordance":1,
+        "set": "affordance_map[x, y, z] = 1",
+        "move" : "grasp"
+    }, 
+    "avoid": {
+        "set": "default"
+    }, 
+    "gripper": {
+        "object": "rubbish", "center_x, center_y, center_z": "object['position']", 
+        "(min_x, min_y, min_z), (max_x, max_y, max_z)": "object['aabb']", 
+        "x": "center_x", 
+        "y": "center_y", 
+        "z": "center_z", 
+        "radius_cm": 0.5, 
+        "value": 0, 
+        "set": "set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)"
+    }, 
+    "rotation": {
+        "object": "rubbish", 
+        "target_rotation": "object['quat']", 
+        "set": "rotation_map[:, :, :] = target_rotation"
+    }, 
+    "velocity": {
+        "set": "default"
+    }
+}

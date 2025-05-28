@@ -1,0 +1,8 @@
+{
+    "Objects": ["bin", "rubbish", "tomato", "tomato1"], 
+    "Query": "pick up the rubbish and leave it in the trash can", 
+    "Planner": ["grasp the rubbish", "move to the top of the bin", "open gripper"], 
+    "Action": "open gripper", 
+    "movable": "gripper", 
+    "Moves" : ["grasp","move"],
+    "affordable": {"set": "default"}, "avoid": {"set": "default"}, "gripper": {"set": "gripper_map[:, :, :] = 1"}, "rotation": {"set": "default"}, "velocity": {"set": "default"}}

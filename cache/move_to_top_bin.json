@@ -1,0 +1,30 @@
+{
+    "Objects": ["bin", "rubbish", "tomato", "tomato1"], 
+    "Query": "pick up the rubbish and leave it in the trash can", 
+    "Planner": ["grasp the rubbish", "move to the top of the bin", "open gripper"], 
+    "Action": "move to the top of the bin", 
+    "movable": "gripper", 
+    "Moves" : ["grasp","move"],
+    "affordable": {
+        "object": "bin", "center_x, center_y, center_z": "object['position']", 
+        "(min_x, min_y, min_z), (max_x, max_y, max_z)": "object['aabb']", 
+        "x": "center_x", 
+        "y": "center_y", 
+        "z": "max_z + cm2index(5, 'z')", 
+        "target_affordance": 1, 
+        "set": "affordance_map[x, y, z] = target_affordance",
+        "move" : "move"
+        }, 
+    "avoid": {
+        "set": "default"
+        }, 
+    "gripper": {
+        "set": "default"
+        }, 
+    "rotation": {
+        "set": "default"
+        }, 
+    "velocity": {
+        "set": "default"
+        }
+}
