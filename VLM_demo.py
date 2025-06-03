@@ -152,7 +152,7 @@ def get_world_bboxs_list(image_path,objects):
     completion = client.chat.completions.create(
         model="qwen2.5-vl-72b-instruct", 
         messages=[{"role": "user","content": [
-                {"type": "text","text": f"This is a robotic arm operation scene, you need to detect {objects}. Detect all objects in the image and return their locations in the form of coordinates, don't give up any information about the details. The format of output should be like" +"{“bbox”: [x1, y1, x2, y2], “label”: the name of this object in English.} not {“bbox_2d”: [x1, y1, x2, y2], “label”: the name of this object in Chinese}"},
+                {"type": "text","text": f"This is a robotic arm operation scene, you need to detect all objects in the image and return their locations in the form of coordinates, don't give up any information about the details. The format of output should be like" +"{“bbox”: [x1, y1, x2, y2], “label”: the name of this object in English.} not {“bbox_2d”: [x1, y1, x2, y2], “label”: the name of this object in Chinese}"},
                 {"type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}, 
                 }
@@ -196,7 +196,3 @@ def get_response(url,query):
         return response.json()
     else:
         print("Error:", response.status_code, response.text)
-
-
-    
-

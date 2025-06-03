@@ -2,7 +2,6 @@ from camera import Camera
 from grasp_module import infer_grasps
 import numpy as np
 import matplotlib.pyplot as plt
-import time
 
 
 camera = Camera()

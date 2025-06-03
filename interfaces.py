@@ -23,7 +23,7 @@ json_numpy.patch()
 
 def setup_LMP(general_config, ur5, debug=False):
   planner_config = general_config['planner']
-  lmp_env_config = general_config['lmp_config']['env']
+  lmp_env_config = general_config['lmp_confbbox_entitiesig']['env']
 
   #修改lmps_config
   lmps_config = general_config['lmp_config']['lmps']
@@ -201,6 +201,8 @@ class LMP_interface():
       state = {}
       plt.figure(figsize=(20, 20))
       frame, bbox_entities = self.update_box()
+      print(bbox_entities)
+
       visuals,classes,label2id,id2label = process_visual_prompt(bbox_entities)
       set_visual_prompt(frame, visuals, classes)
       num = 0

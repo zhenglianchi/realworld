@@ -43,8 +43,8 @@ while not os.path.exists(config["json_path"]):
     time.sleep(1)
 
 
-thread2.start()
-thread2.join()
+#thread2.start()
+#thread2.join()
 thread1.join()
 
 
