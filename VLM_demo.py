@@ -140,7 +140,7 @@ def smart_resize(image_path, factor = 28, vl_high_resolution_images = False):
     return w_bar , h_bar
 
 
-def get_world_bboxs_list(image_path,objects):
+def get_world_bboxs_list(image_path,instruction):
 
     client = OpenAI(
         api_key="sk-2b726a0c6b6a4554b7834df6bac0b803",
@@ -152,7 +152,7 @@ def get_world_bboxs_list(image_path,objects):
     completion = client.chat.completions.create(
         model="qwen2.5-vl-72b-instruct", 
         messages=[{"role": "user","content": [
-                {"type": "text","text": f"This is a robotic arm operation scene, you need to detect all objects in the image and return their locations in the form of coordinates, don't give up any information about the details. The format of output should be like" +"{“bbox”: [x1, y1, x2, y2], “label”: the name of this object in English.} not {“bbox_2d”: [x1, y1, x2, y2], “label”: the name of this object in Chinese}"},
+                {"type": "text","text": f"This is a robotic arm operation scene, you need to detect all objects associated with the '{instruction}' in the image and return their locations in the form of coordinates, don't give up any information about the details. The format of output should be like" +"{“bbox”: [x1, y1, x2, y2], “label”: the name of this object in English.} not {“bbox_2d”: [x1, y1, x2, y2], “label”: the name of this object in Chinese}. like 'grasp the rubbish', you need to detect the rubbish and obstacles in the way;like 'open the drawer', you need to detect the drawer handle and obstacles in the way;"},
                 {"type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}, 
                 }

@@ -1,5 +1,6 @@
 import rtde_control
 import rtde_receive
+from scipy.spatial.transform import Rotation as R
 import numpy as np
 
 class UR_BASE(object):
@@ -45,7 +46,7 @@ class UR_BASE(object):
 
     # 工具的笛卡尔坐标(x,y,z,rx,ry,rz)
     def get_tcp(self):
-        return self.rtde_r.getActualTCPPose()
+        return np.array(self.rtde_r.getActualTCPPose(),dtype=np.float32)
 
     def get_joint(self):
         return self.rtde_r.getActualQ()
@@ -70,3 +71,28 @@ class UR_BASE(object):
 
     def execute(self,movable_var, waypoint):
         print(movable_var,waypoint)
+
+    def ur_pose_to_matrix(self):
+        """
+        将 UR5 的 [x,y,z,Rx,Ry,Rz] 格式转换为 4x4 变换矩阵
+        
+        参数:
+        - pose: list 或 numpy array，长度为6，顺序是 [x, y, z, Rx, Ry, Rz]
+        
+        返回:
+        - T: 4x4 的变换矩阵，表示从工具坐标系到基座坐标系的变换
+        """
+        x, y, z, rx, ry, rz = self.get_tcp()
+        
+        # 平移部分
+        translation = np.array([x, y, z])
+        
+        # 旋转部分：UR 中的 Rx,Ry,Rz 是 axis-angle 表示法（单位：弧度）
+        rotation = R.from_rotvec([rx, ry, rz]).as_matrix()
+        
+        # 构建齐次变换矩阵
+        T = np.eye(4)
+        T[:3, :3] = rotation
+        T[:3, 3] = translation
+        
+        return T

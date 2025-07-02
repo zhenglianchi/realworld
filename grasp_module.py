@@ -48,7 +48,7 @@ def infer_grasps(color,depth,workspace_mask,camera, init, grasp_ids):
         grasp_mask_y = ((curr_gg.translations[:,1]>-0.12) & (curr_gg.translations[:,1]<0.12))
         grasp_mask_z = ((curr_gg.translations[:,2]>0.35) & (curr_gg.translations[:,2]<0.55))
         workspace_mask = grasp_mask_x & grasp_mask_y & grasp_mask_z
-        grasp_ids = np.where(workspace_mask)[0][:24:6]
+        grasp_ids = np.where(workspace_mask)[0][0:1]
 
         target_gg = curr_gg[grasp_ids]
     else:

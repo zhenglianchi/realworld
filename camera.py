@@ -61,5 +61,14 @@ class Camera:
         img_depth = np.asanyarray(aligned_depth_frame.get_data())
 
         return img_color, img_depth
+    
+    def get_extrinsic_matrix(self):
+        extrinsic_matrix = np.array(
+            [[1, 0, 0, 0],
+             [0, 1, 0, 0],
+             [0, 0, 1, 0],
+             [0, 0, 0, 1]]
+        )
+        return extrinsic_matrix
 
 

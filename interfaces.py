@@ -23,7 +23,7 @@ json_numpy.patch()
 
 def setup_LMP(general_config, ur5, debug=False):
   planner_config = general_config['planner']
-  lmp_env_config = general_config['lmp_confbbox_entitiesig']['env']
+  lmp_env_config = general_config['lmp_config']['env']
 
   #修改lmps_config
   lmps_config = general_config['lmp_config']['lmps']
@@ -61,7 +61,7 @@ class LMP_interface():
   # ======================================================
 
 
-  def get_obs(self, obj_pc, label):
+  def get_obs(self, obj_pc, label, grasp_pose):
     obs_dict = dict()
     voxel_map = self._points_to_voxel_map(obj_pc)
     aabb_min = self._world_to_voxel(np.min(obj_pc, axis=0))
@@ -72,8 +72,8 @@ class LMP_interface():
     obs_dict['aabb'] = np.array([aabb_min, aabb_max])  # in voxel frame
     obs_dict['_position_world'] = np.mean(obj_pc, axis=0)  # in world frame
     obs_dict['_point_cloud_world'] = obj_pc  # in world frame
-    #obs_dict['translation'] = self._world_to_voxel(grasp_pose["translation"])
-    #obs_dict['quat'] = grasp_pose["quat"]
+    obs_dict['translation'] = grasp_pose['translation']  # in world frame
+    obs_dict['quat'] = grasp_pose['quat']  # in world frame
 
     object_obs = {"obs":Observation(obs_dict)}
     return object_obs
@@ -84,7 +84,7 @@ class LMP_interface():
       obs_dict['name'] = "gripper"
       obs_dict['position'] = self.get_ee_pos()
       obs_dict['aabb'] = np.array([self.get_ee_pos(), self.get_ee_pos()])
-      obs_dict['_position_world'] = self._env.get_ee_pos()
+      obs_dict['_position_world'] = self.ur5.get_tcp()[:3]
       object_obs = {"obs":Observation(obs_dict)}
       return object_obs
 
@@ -175,23 +175,80 @@ class LMP_interface():
 
     return interpolated_quaternions
 
+  def transform_point_cloud(points_camera, T_world_to_camera):
+    """
+    将整个点云从相机坐标系变换到世界坐标系
 
-  def update_box(self):
-    rgb, img_depth, aligned_depth_frame = self.camera.get_aligned_images()
+    参数:
+    - points_camera: shape (H, W, 3)，相机坐标系下的点云
+    - T_world_to_camera: shape (4, 4)，相机到世界的变换矩阵
+
+    返回:
+    - points_world: shape (H, W, 3)，世界坐标系下的点云
+    """
+    H, W, _ = points_camera.shape
+
+    # 添加齐次维度
+    points_homogeneous = np.ones((H * W, 4))
+    points_homogeneous[:, :3] = points_camera.reshape(-1, 3)
+
+    # 变换到世界坐标系
+    points_world_homogeneous = (points_homogeneous @ T_world_to_camera.T)
+
+    # 提取 xyz
+    points_world = points_world_homogeneous[:, :3].reshape(H, W, 3)
+
+    return points_world
+
+  def qwen_vl_box(self,instruction):
+    rgb, img_depth = self.camera.get_aligned_images()
     image = Image.fromarray(np.array(rgb))
     image_path = f"tmp/images/rgb.jpeg"
     image.save(image_path)
-    '''
-    这里需要把objects改掉
-    同时修改prompt
-    让QWEN去得到场景所有物体
-    '''
-    objects = self._env.get_object_names()
-    bbox = get_world_bboxs_list(image_path, objects)
+    bbox = get_world_bboxs_list(image_path,instruction)
     return rgb, bbox
+  
+  def get_grasp_pose(self,color,meter_depth,workspace_mask,init,grasp_ids):
+      if init:
+        grasp_ids = [0]
+        target_gg, grasp_ids = infer_grasps(color, meter_depth, workspace_mask, self.camera, init, grasp_ids)
+        init = False
+      else:
+        target_gg, grasp_ids = infer_grasps(color, meter_depth, workspace_mask, self.camera, init, grasp_ids)
+      
+      print(grasp_ids)
+      print(target_gg)
+
+      min_gg = 100
+      grasp_pose = None
+      for gg_final in target_gg:
+        T_gg_grasp = np.eye(4)
+        T_gg_grasp[:3, :3] = gg_final.rotation_matrix
+        T_gg_grasp[:3, 3] = gg_final.translation
+
+        T_grasp2cam = np.eye(4)
+
+        T_gg_cam = T_grasp2cam @ T_gg_grasp
+        
+        T_cam2world = self.camera.get_extrinsic_matrix()
+        T_grasp2world = T_cam2world @ T_gg_cam
+        
+        rotation_matrix = R.from_matrix(T_grasp2world[:3, :3])
+        quat = rotation_matrix.as_quat()
+        translation = T_grasp2world[:3, 3]
+        ee_current_quat = self._env.get_ee_quat()
+        angle_distance = self.quaternion_distance_angle(quat, ee_current_quat)
+        if angle_distance < min_gg:
+            min_gg = angle_distance
+            grasp_pose = {
+              "translation": translation,
+              "quat": quat
+            }
+
+        return grasp_pose
 
 
-  def update_mask_entities(self,lock,q):
+  def update_mask_entities(self,instruction,lock,q):
       if not os.path.exists("tmp/images"):
           os.makedirs("tmp/images")
       if not os.path.exists("tmp/masks"):
@@ -200,22 +257,28 @@ class LMP_interface():
       state_json_path = f"tmp/state.json"
       state = {}
       plt.figure(figsize=(20, 20))
-      frame, bbox_entities = self.update_box()
+      frame, bbox_entities = self.qwen_vl_box(instruction)
       print(bbox_entities)
 
-      visuals,classes,label2id,id2label = process_visual_prompt(bbox_entities)
-      set_visual_prompt(frame, visuals, classes)
+      visuals,objects,label2id,id2label = process_visual_prompt(bbox_entities)
+      set_visual_prompt(frame, visuals, objects)
       num = 0
       init = True
+      grasp_ids = []
       while q.empty():
         start_time = time.time()
         label_index = {}
-        for item in classes:
+        for item in objects:
           if item not in label_index.keys():
             label_index[item] = 1
 
         color, meter_depth = self.camera.get_aligned_images()
-        pcd_ = self.camera.create_point_cloud_from_depth_image(meter_depth)
+        # 这里创建的点云，原点为相机坐标系中心
+        points_camera = self.camera.create_point_cloud_from_depth_image(meter_depth)
+        T_world_to_end = self.ur5.ur_pose_to_matrix()
+        T_end_to_camera = self.camera.get_extrinsic_matrix()
+        T_world_to_camera = T_world_to_end @ T_end_to_camera
+        pcd_ = self.transform_point_cloud(points_camera, T_world_to_camera)
 
         plt.clf()
         plt.imshow(frame)
@@ -251,7 +314,12 @@ class LMP_interface():
             pcd_downsampled = pcd.voxel_down_sample(voxel_size=0.001)
             obj_points = np.asarray(pcd_downsampled.points)
 
-            obs = self.get_obs(obj_points, label)
+            color = np.array(frame.copy(), dtype=np.float32) / 255.0
+            meter_depth = np.array(meter_depth.copy(), dtype=np.float32) / 1000.0
+            workspace_mask = workspace_mask.astype(bool)
+            grasp_pose = self.get_grasp_pose(color, meter_depth, workspace_mask, init, grasp_ids)
+
+            obs = self.get_obs(obj_points, label, grasp_pose)
             # 如果物体已经存在，则将新的相同的物体设定为object1，object2，以此类推
             if label in state.keys():
               old_label = label
@@ -269,51 +337,13 @@ class LMP_interface():
             # 在中心位置显示label
             plt.text(center_x, center_y, label, color='white', ha='center', va='center', fontsize=12, weight='bold')
 
-        color = np.array(frame.copy(), dtype=np.float32) / 255.0
-        meter_depth = np.array(meter_depth.copy(), dtype=np.float32) / 1000.0
-        workspace_mask = workspace_mask.astype(bool)
-
-        if init:
-          grasp_ids = [0]
-          target_gg, grasp_ids = infer_grasps(color, meter_depth, workspace_mask, self.camera, init, grasp_ids)
-          init = False
-        else:
-          target_gg, grasp_ids = infer_grasps(color, meter_depth, workspace_mask, self.camera, init, grasp_ids)
-        
-        print(grasp_ids)
-        print(target_gg)
-
-        '''min_gg = 100
-        grasp_pose = None
-        for gg_final in gg:
-          T_gg_grasp = np.eye(4)
-          T_gg_grasp[:3, :3] = gg_final.rotation_matrix
-          T_gg_grasp[:3, 3] = gg_final.translation
-
-          T_grasp2cam = np.eye(4)
-
-          T_gg_cam = T_grasp2cam @ T_gg_grasp
-          
-          T_cam2world = self.cam.get_matrix()
-          T_grasp2world = T_cam2world @ T_gg_cam
-          
-          rotation_matrix = R.from_matrix(T_grasp2world[:3, :3])
-          quat = rotation_matrix.as_quat()
-          translation = T_grasp2world[:3, 3]
-          ee_current_quat = self._env.get_ee_quat()
-          angle_distance = self.quaternion_distance_angle(quat, ee_current_quat)
-          if angle_distance < min_gg:
-              min_gg = angle_distance
-              grasp_pose = {
-                "translation": translation,
-                "quat": quat
-              }'''
 
         state['gripper'] = self.get_ee_obs()
         state['workspace'] = self.get_table_obs()
         # 将state保存为JSON文件
         #print(state)
         write_state(state_json_path, state, lock)
+        print(state)
         end_time = time.time()  # 记录结束时间
         print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated object state in {end_time - start_time:.3f}s{bcolors.ENDC}")
         plt.axis('off')
@@ -324,7 +354,7 @@ class LMP_interface():
   
 
   def get_ee_pos(self):
-    return self._world_to_voxel(self.ur5.get_tcp())
+    return self._world_to_voxel(self.ur5.get_tcp()[:3])
 
   def reset_to_default_pose(self):
      self.ur5.reset_to_default_pose()
