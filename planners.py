@@ -16,7 +16,7 @@ class PathPlanner:
         self.config = planner_config
         self.map_size = map_size
 
-    def optimize(self, start_pos: np.ndarray, target_map: np.ndarray, obstacle_map: np.ndarray, object_centric):
+    def optimize(self, start_pos: np.ndarray, target_map: np.ndarray, obstacle_map: np.ndarray, object_centric = False):
         """
         config:
             start_pos: (3,) np.ndarray, start position

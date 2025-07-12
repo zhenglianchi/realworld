@@ -179,7 +179,7 @@ class LMP:
                 pass
             object = object_state[rotation_var]["obs"]
             target_rotation = eval(rotation["target_rotation"])
-            current_rotation = lmp_env._env.get_ee_quat()
+            current_rotation = lmp_env.ur5.get_tcp()[3:]
             quat_traj = lmp_env.interpolate_quaternions(current_rotation.tolist(), target_rotation.tolist(), 9)
             #rotation_map[:, :, :] = target_rotation
             '''for wp in quat_traj:
@@ -242,7 +242,7 @@ class LMP:
                         rotation = self.quat_queue.get().tolist()
                         rotation_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]] = rotation
                     else:
-                        rotation = lmp_env._env.get_ee_quat()
+                        rotation = lmp_env.ur5.get_tcp()[3:]
                     velocity = velocity_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
                     gripper = gripper_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
                     
@@ -344,14 +344,14 @@ class LMP:
                 _velocity_map = velocity_map
                 _gripper_map = gripper_map
                 # get last ee pose
-                ee_pos_world = lmp_env._env.get_ee_pos()
+                ee_pos_world = lmp_env.ur5.get_tcp()[:3]
                 ee_pos_voxel = lmp_env.get_ee_pos()
                 ee_rot_world = _rotation_map[ee_pos_voxel[0], ee_pos_voxel[1], ee_pos_voxel[2]]
                 ee_pose_world = np.concatenate([ee_pos_world, ee_rot_world])
                 ee_speed = _velocity_map[ee_pos_voxel[0], ee_pos_voxel[1], ee_pos_voxel[2]]
                 gripper_state = _gripper_map[ee_pos_voxel[0], ee_pos_voxel[1], ee_pos_voxel[2]]
             # move to the final target
-            lmp_env._env.apply_action(np.concatenate([ee_pose_world, [gripper_state]]))
+            lmp_env.ur5.apply_action(np.concatenate([ee_pose_world, [gripper_state]]))
 
 
     def __call__(self, query, file_lock, lmp_env):
