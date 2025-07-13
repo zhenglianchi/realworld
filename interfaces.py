@@ -175,28 +175,31 @@ class LMP_interface():
 
     return interpolated_quaternions
 
-  def transform_point_cloud(points_camera, T_world_to_camera):
+
+
+  def transform_points_to_world(self, points_homogeneous, T_camera_to_world):
     """
-    将整个点云从相机坐标系变换到世界坐标系
+    将形状为 (N, 3) 的点从相机坐标系变换到世界坐标系
 
     参数:
-    - points_camera: shape (H, W, 3)，相机坐标系下的点云
-    - T_world_to_camera: shape (4, 4)，相机到世界的变换矩阵
+        points_homogeneous: shape (N, 3)，相机坐标系下的齐次点
+        T_camera_to_world: shape (4, 4)，相机到世界的变换矩阵
 
     返回:
-    - points_world: shape (H, W, 3)，世界坐标系下的点云
+        points_world: shape (N, 3)，世界坐标系下的齐次点
     """
-    H, W, _ = points_camera.shape
+    # 获取点数量
+    N = points_homogeneous.shape[0]
 
-    # 添加齐次维度
-    points_homogeneous = np.ones((H * W, 4))
-    points_homogeneous[:, :3] = points_camera.reshape(-1, 3)
+    # 添加齐次坐标 1，变成 (N, 4)
+    points_homogeneous = np.hstack([
+        points_homogeneous,
+        np.ones((N, 1))
+    ])  # shape (N, 4)
 
-    # 变换到世界坐标系
-    points_world_homogeneous = (points_homogeneous @ T_world_to_camera.T)
-
-    # 提取 xyz
-    points_world = points_world_homogeneous[:, :3].reshape(H, W, 3)
+    # 应用变换
+    points_world = T_camera_to_world @ points_homogeneous.T
+    points_world = points_world.T[:, :3]
 
     return points_world
 
@@ -236,7 +239,7 @@ class LMP_interface():
         rotation_matrix = R.from_matrix(T_grasp2world[:3, :3])
         quat = rotation_matrix.as_quat()
         translation = T_grasp2world[:3, 3]
-        ee_current_quat = self._env.get_ee_quat()
+        ee_current_quat = self.ur5.get_tcp()[3:]
         angle_distance = self.quaternion_distance_angle(quat, ee_current_quat)
         if angle_distance < min_gg:
             min_gg = angle_distance
@@ -274,11 +277,7 @@ class LMP_interface():
 
         color, meter_depth = self.camera.get_aligned_images()
         # 这里创建的点云，原点为相机坐标系中心
-        points_camera = self.camera.create_point_cloud_from_depth_image(meter_depth)
-        T_world_to_end = self.ur5.ur_pose_to_matrix()
-        T_end_to_camera = self.camera.get_extrinsic_matrix()
-        T_world_to_camera = T_world_to_end @ T_end_to_camera
-        pcd_ = self.transform_point_cloud(points_camera, T_world_to_camera)
+        pcd_ = self.camera.create_point_cloud_from_depth_image(meter_depth)
 
         plt.clf()
         plt.imshow(frame)
@@ -289,7 +288,7 @@ class LMP_interface():
             label = id2label[id]
             points, masks = [], []
             box = box_ent[:4]
-
+            
             workspace_mask = workspace_mask | mask.astype(bool)
             
             points.append(pcd_.reshape(-1, 3))
@@ -302,8 +301,13 @@ class LMP_interface():
             pcd = o3d.geometry.PointCloud()
             pcd.points = o3d.utility.Vector3dVector(points[-1])
 
-            points,masks = np.array(points),np.array(masks)
+            points, masks = np.array(points), np.array(masks)
             obj_points = points[np.isin(masks, 1)]
+
+            # 这里将相机下的点云转换到世界坐标系下
+            T_camera_to_base = self.camera.get_extrinsic_matrix()
+            obj_points = self.transform_points_to_world(obj_points, T_camera_to_base)
+
             if len(obj_points) == 0:
                 print(f"Scene not object {label}!")
                 continue
@@ -311,13 +315,17 @@ class LMP_interface():
             # voxel downsample using o3d
             pcd = o3d.geometry.PointCloud()
             pcd.points = o3d.utility.Vector3dVector(obj_points)
-            pcd_downsampled = pcd.voxel_down_sample(voxel_size=0.001)
+            pcd_downsampled = pcd.voxel_down_sample(voxel_size=0.0001)
             obj_points = np.asarray(pcd_downsampled.points)
 
             color = np.array(frame.copy(), dtype=np.float32) / 255.0
-            meter_depth = np.array(meter_depth.copy(), dtype=np.float32) / 1000.0
+            meter_depth = np.array(meter_depth.copy(), dtype=np.float32)
             workspace_mask = workspace_mask.astype(bool)
-            grasp_pose = self.get_grasp_pose(color, meter_depth, workspace_mask, init, grasp_ids)
+            #grasp_pose = self.get_grasp_pose(color, meter_depth, workspace_mask, init, grasp_ids)
+            grasp_pose = {
+              "translation": np.array([-0.65833, -0.56452, 0.88711]),
+              "quat": np.array([1, 0, 0, 0])
+            }
 
             obs = self.get_obs(obj_points, label, grasp_pose)
             # 如果物体已经存在，则将新的相同的物体设定为object1，object2，以此类推

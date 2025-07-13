@@ -14,19 +14,19 @@ config_path = "configs/vlm_rlbench_config.yaml"
 config = get_config(config_path=config_path)
 
 init_pose = np.array([
-    -0.14746,
-    -0.108,
-    0.53696,
-    0.512,
-    3.046,
-    -0.003
+    -0.31562,
+    -0.17153,
+    0.57808,
+    -1.0583,
+    -2.9459,
+    -0.03206
     ])
-
 ur5 = UR_BASE("192.168.111.10",fisrt_tcp=init_pose)
 
 voxposer_ui, lmp_env = setup_LMP(config,ur5)
 
-instruction = input("请输入指令")
+#instruction = input("请输入指令")
+instruction = "Pick up the mouse"
 
 # 创建锁
 file_lock = threading.Lock()

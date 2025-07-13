@@ -35,7 +35,7 @@ class Camera:
         self.fy = self.color_intrin.fy
         self.cx = self.color_intrin.ppx
         self.cy = self.color_intrin.ppy
-        self.scale = 1.0
+        self.scale = 1000.0
 
         for i in range(10):
             self.get_aligned_images()
@@ -46,7 +46,7 @@ class Camera:
         xmap = np.arange(self.width)
         ymap = np.arange(self.height)
         xmap, ymap = np.meshgrid(xmap, ymap)
-        points_z = depth / self.scale
+        points_z = depth
         points_x = (xmap - self.cx) * points_z / self.fx
         points_y = (ymap - self.cy) * points_z / self.fy
         points = np.stack([points_x, points_y, points_z], axis=-1)
@@ -58,16 +58,16 @@ class Camera:
         aligned_depth_frame = aligned_frames.get_depth_frame()
         aligned_color_frame = aligned_frames.get_color_frame()
         img_color = np.asanyarray(aligned_color_frame.get_data())
-        img_depth = np.asanyarray(aligned_depth_frame.get_data())
+        img_depth = np.asanyarray(aligned_depth_frame.get_data())/self.scale
 
         return img_color, img_depth
     
     def get_extrinsic_matrix(self):
         extrinsic_matrix = np.array(
-            [[1, 0, 0, 0],
-             [0, 1, 0, 0],
-             [0, 0, 1, 0],
-             [0, 0, 0, 1]]
+        [[ 0.66936684, -0.62154663,  0.40697398, -0.65873061],
+        [-0.741347,   -0.52304211,  0.42051347, -0.56488244],
+        [-0.0485042,  -0.58318671, -0.81088877,  0.88797413],
+        [ 0,          0,          0,          1        ]]
         )
         return extrinsic_matrix
 

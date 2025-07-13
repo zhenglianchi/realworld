@@ -9,8 +9,8 @@ class UR_BASE(object):
         self.rtde_c = rtde_control.RTDEControlInterface(HOST)
         self.rtde_r = rtde_receive.RTDEReceiveInterface(HOST)
         self.current_tcp = self.get_tcp()
-        self.workspace_bounds_min = np.array([-0.27499999, -0.65500004,  0.75199986])
-        self.workspace_bounds_max = np.array([0.77499999, 0.65500004, 1.75199986])
+        self.workspace_bounds_min = np.array([-1.27499999, -1.65500004,  0.15199986])
+        self.workspace_bounds_max = np.array([1.77499999, 1.65500004, 1.75199986])
         if fisrt_tcp is not None:
             self.init_pose = fisrt_tcp
             self.moveL(fisrt_tcp)
@@ -51,7 +51,7 @@ class UR_BASE(object):
     def get_joint(self):
         return self.rtde_r.getActualQ()
 
-    def moveL(self, pose, asy=True, speed=0.02, acc=0.2):
+    def moveL(self, pose, asy=True, speed=0.005, acc=0.005):
         pose = pose.tolist()
         self.rtde_c.moveL(pose, speed, acc, asy)
 

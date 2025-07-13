@@ -24,7 +24,7 @@ anygrasp_tracker.load_net()
 def get_data(color,depth,camera):
     # get point cloud
     points = camera.create_point_cloud_from_depth_image(depth)
-    mask = (points[:,:,2] >= 0) & (points[:,:,2] < 1)
+    mask = (points[:,:,2] >= 0) & (points[:,:,2] < 1.5)
     points = points[mask]
     colors = color[mask]
 
@@ -44,11 +44,11 @@ def infer_grasps(color,depth,workspace_mask,camera, init, grasp_ids):
     target_gg, curr_gg, target_grasp_ids, corres_preds = anygrasp_tracker.update(points, colors, grasp_ids)
     if init:
         # 这里的mask是手动设置的，可以根据实际情况调整
-        grasp_mask_x = ((curr_gg.translations[:,0]>-0.18) & (curr_gg.translations[:,0]<0.18))
-        grasp_mask_y = ((curr_gg.translations[:,1]>-0.12) & (curr_gg.translations[:,1]<0.12))
-        grasp_mask_z = ((curr_gg.translations[:,2]>0.35) & (curr_gg.translations[:,2]<0.55))
+        grasp_mask_x = ((curr_gg.translations[:,0]>-0.5) & (curr_gg.translations[:,0]<0.5))
+        grasp_mask_y = ((curr_gg.translations[:,1]>-0.5) & (curr_gg.translations[:,1]<0.5))
+        grasp_mask_z = ((curr_gg.translations[:,2]>0.1) & (curr_gg.translations[:,2]<2))
         workspace_mask = grasp_mask_x & grasp_mask_y & grasp_mask_z
-        grasp_ids = np.where(workspace_mask)[0][0:1]
+        grasp_ids = np.where(workspace_mask)[0][0:36]
 
         target_gg = curr_gg[grasp_ids]
     else:
