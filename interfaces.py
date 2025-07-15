@@ -171,7 +171,7 @@ class LMP_interface():
         "rotvec": rotvec
       }
 
-      return grasp_pose,init
+      return grasp_pose, init, grasp_ids
 
 
   def update_mask_entities(self,instruction,lock,q):
@@ -244,8 +244,15 @@ class LMP_interface():
             color = np.array(frame.copy(), dtype=np.float32) / 255.0
             meter_depth = np.array(meter_depth.copy(), dtype=np.float32)
             workspace_mask = workspace_mask.astype(bool)
-            grasp_pose, init = self.get_grasp_pose(color, meter_depth, workspace_mask, init, grasp_ids)
-            print(grasp_pose)
+
+            '''
+            后期优化为获取当前action_state的抓取物体的姿态
+            利用列表和锁机制
+            当action_state存在时并且为抓取时
+            去实现抓取物体
+            目前测试只抓取一个物体
+            '''
+            grasp_pose, init, grasp_ids = self.get_grasp_pose(color, meter_depth, workspace_mask, init, grasp_ids)
 
             obs = self.get_obs(obj_points, label, grasp_pose)
             # 如果物体已经存在，则将新的相同的物体设定为object1，object2，以此类推
