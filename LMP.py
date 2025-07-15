@@ -356,6 +356,7 @@ class LMP:
 
     def __call__(self, query, file_lock, lmp_env):
         planning = self.generate_planning(query)
+        print(planning)
         planning_ = planning.copy()
         update_stop_event = threading.Event()
         exec_stop_event = threading.Event()
@@ -373,7 +374,11 @@ class LMP:
             if action_state is None:
                 filepath = self.get_last_filename(self.mask_path)
                 action_state  = self._vlmapi_call(filepath, query=query, planner=planning_, action=action, objects=self._context)
+
             print(action_state)
+            with open("action_state.json", 'w', encoding='utf-8') as json_file:
+                json.dump(action_state, json_file)
+
 
             # 启动更新路径的线程
             update_thread = threading.Thread(target=self.__thread_update_traj, args=(lmp_env, action_state, file_lock, update_stop_event,exec_stop_event, ))

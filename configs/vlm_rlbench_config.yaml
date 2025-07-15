@@ -1,5 +1,5 @@
 env_name: vlm_rlbench
-json_path: ./tmp/state_front.json
+json_path: ./tmp/state.json
 planner:
   stop_threshold: 0.001
   savgol_polyorder: 3

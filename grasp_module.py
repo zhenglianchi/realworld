@@ -21,10 +21,9 @@ cfgs = parser.parse_args()
 anygrasp_tracker = AnyGraspTracker(cfgs)
 anygrasp_tracker.load_net()
 
-def get_data(color,depth,camera):
+def get_data(color,depth,camera,mask):
     # get point cloud
     points = camera.create_point_cloud_from_depth_image(depth)
-    mask = (points[:,:,2] >= 0) & (points[:,:,2] < 1.5)
     points = points[mask]
     colors = color[mask]
 
@@ -39,7 +38,7 @@ def vis_grasps(gg, points, colors):
 
 
 def infer_grasps(color,depth,workspace_mask,camera, init, grasp_ids):
-    points, colors = get_data(color,depth,camera)
+    points, colors = get_data(color,depth,camera,workspace_mask)
 
     target_gg, curr_gg, target_grasp_ids, corres_preds = anygrasp_tracker.update(points, colors, grasp_ids)
     if init:
@@ -48,7 +47,7 @@ def infer_grasps(color,depth,workspace_mask,camera, init, grasp_ids):
         grasp_mask_y = ((curr_gg.translations[:,1]>-0.5) & (curr_gg.translations[:,1]<0.5))
         grasp_mask_z = ((curr_gg.translations[:,2]>0.1) & (curr_gg.translations[:,2]<2))
         workspace_mask = grasp_mask_x & grasp_mask_y & grasp_mask_z
-        grasp_ids = np.where(workspace_mask)[0][0:36]
+        grasp_ids = np.where(workspace_mask)[0][0:1]
 
         target_gg = curr_gg[grasp_ids]
     else:

@@ -9,13 +9,12 @@ from VLM_demo import  write_state, get_world_bboxs_list,show_mask,process_visual
 from PIL import Image
 import matplotlib.pyplot as plt
 import matplotlib
+import json
 import json_numpy
 import os
 from scipy.spatial.transform import Rotation as R
 from camera import Camera
-import time
 from grasp_module import infer_grasps
-import time
 
 matplotlib.use('Agg')
 
@@ -73,7 +72,7 @@ class LMP_interface():
     obs_dict['_position_world'] = np.mean(obj_pc, axis=0)  # in world frame
     obs_dict['_point_cloud_world'] = obj_pc  # in world frame
     obs_dict['translation'] = grasp_pose['translation']  # in world frame
-    obs_dict['quat'] = grasp_pose['quat']  # in world frame
+    obs_dict['rotvec'] = grasp_pose['rotvec']  # in world frame
 
     object_obs = {"obs":Observation(obs_dict)}
     return object_obs
@@ -106,76 +105,7 @@ class LMP_interface():
       object_obs = {"obs":Observation(obs_dict)}
       return object_obs
 
-
-  def quaternion_distance_angle(self, q1, q2):
-    """
-    计算两个四元数的角度距离（最小旋转角度）
-    :param q1: 第一个四元数 [w, x, y, z]
-    :param q2: 第二个四元数 [w, x, y, z]
-    :return: 角度距离（弧度制）
-    """
-    # 计算四元数内积
-    dot_product = np.dot(q1, q2)
-    # 取绝对值以处理 q 和 -q 的等价性
-    cos_phi = np.abs(dot_product)
-    # 防止数值误差导致 cos_phi 超出 [-1, 1] 范围
-    cos_phi = np.clip(cos_phi, -1.0, 1.0)
-    # 计算角度距离
-    angle_distance = 2 * np.arccos(cos_phi)
-    return angle_distance
   
-
-  def quaternion_slerp(self, q0, q1, t):
-    """
-    手动实现球面线性插值 (SLERP)。
-    :param q0: 起始四元数 [x, y, z, w]
-    :param q1: 目标四元数 [x, y, z, w]
-    :param t: 插值参数，范围 [0, 1]
-    :return: 插值后的四元数 [x, y, z, w]
-    """
-    # 确保输入是 numpy 数组
-    q0 = np.array(q0)
-    q1 = np.array(q1)
-
-    # 计算点积以检测夹角
-    dot = np.dot(q0, q1)
-
-    # 如果点积小于 0，则反转 q1 以选择最短路径
-    if dot < 0:
-        q1 = -q1
-        dot = -dot
-
-    # 夹角接近 0 或 π 时，退化为线性插值
-    if dot > 0.9995:
-        return q0 * (1 - t) + q1 * t
-
-    # 计算夹角 theta
-    theta = np.arccos(dot)
-
-    # 使用 SLERP 公式计算插值
-    sin_theta = np.sin(theta)
-    q_interp = (np.sin((1 - t) * theta) / sin_theta) * q0 + (np.sin(t * theta) / sin_theta) * q1
-
-    return q_interp
-
-  def interpolate_quaternions(self, q_start, q_end, num_points=10):
-    """
-    在两个四元数之间生成插值轨迹。
-    :param q_start: 起始四元数 [x, y, z, w]
-    :param q_end: 目标四元数 [x, y, z, w]
-    :param num_points: 插值点的数量（包括起点和终点）
-    :return: 包含插值四元数的列表
-    """
-    t_values = np.linspace(0, 1, num_points)  # 生成插值参数
-    interpolated_quaternions = []
-
-    for t in t_values:
-        q_interp = self.quaternion_slerp(q_start, q_end, t)
-        interpolated_quaternions.append(q_interp)
-
-    return interpolated_quaternions
-
-
 
   def transform_points_to_world(self, points_homogeneous, T_camera_to_world):
     """
@@ -222,33 +152,30 @@ class LMP_interface():
       print(grasp_ids)
       print(target_gg)
 
-      min_gg = 100
       grasp_pose = None
-      for gg_final in target_gg:
-        T_gg_grasp = np.eye(4)
-        T_gg_grasp[:3, :3] = gg_final.rotation_matrix
-        T_gg_grasp[:3, 3] = gg_final.translation
+      gg_final = target_gg[0]
+      T_gg_grasp = np.eye(4)
+      T_gg_grasp[:3, :3] = gg_final.rotation_matrix
+      T_gg_grasp[:3, 3] = gg_final.translation
 
-        T_grasp2cam = np.eye(4)
+      T_grasp2cam = np.eye(4)
+      T_gg_cam = T_grasp2cam @ T_gg_grasp
+      
+      T_cam2world = self.camera.get_extrinsic_matrix()
+      T_grasp2world = T_cam2world @ T_gg_cam
+      
+      rotation_matrix = R.from_matrix(T_grasp2world[:3, :3])
+      rotvec = rotation_matrix.as_rotvec()
+      translation = T_grasp2world[:3, 3]
+      # 补偿gripper高度
+      translation[2] = translation[2] + 0.2
 
-        T_gg_cam = T_grasp2cam @ T_gg_grasp
-        
-        T_cam2world = self.camera.get_extrinsic_matrix()
-        T_grasp2world = T_cam2world @ T_gg_cam
-        
-        rotation_matrix = R.from_matrix(T_grasp2world[:3, :3])
-        quat = rotation_matrix.as_quat()
-        translation = T_grasp2world[:3, 3]
-        ee_current_quat = self.ur5.get_tcp()[3:]
-        angle_distance = self.quaternion_distance_angle(quat, ee_current_quat)
-        if angle_distance < min_gg:
-            min_gg = angle_distance
-            grasp_pose = {
-              "translation": translation,
-              "quat": quat
-            }
+      grasp_pose = {
+        "translation": translation,
+        "rotvec": rotvec
+      }
 
-        return grasp_pose
+      return grasp_pose,init
 
 
   def update_mask_entities(self,instruction,lock,q):
@@ -321,11 +248,8 @@ class LMP_interface():
             color = np.array(frame.copy(), dtype=np.float32) / 255.0
             meter_depth = np.array(meter_depth.copy(), dtype=np.float32)
             workspace_mask = workspace_mask.astype(bool)
-            #grasp_pose = self.get_grasp_pose(color, meter_depth, workspace_mask, init, grasp_ids)
-            grasp_pose = {
-              "translation": np.array([-0.65833, -0.56452, 0.88711]),
-              "quat": np.array([1, 0, 0, 0])
-            }
+            grasp_pose, init = self.get_grasp_pose(color, meter_depth, workspace_mask, init, grasp_ids)
+            print(grasp_pose)
 
             obs = self.get_obs(obj_points, label, grasp_pose)
             # 如果物体已经存在，则将新的相同的物体设定为object1，object2，以此类推
