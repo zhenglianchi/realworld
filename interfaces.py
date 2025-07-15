@@ -35,11 +35,7 @@ def setup_LMP(general_config, ur5, debug=False):
       'planner', lmps_config, debug, env_name
   )
 
-  lmps = {
-      'plan_ui': task_planner
-  }
-
-  return lmps, lmp_env
+  return task_planner, lmp_env
 
 
 class LMP_interface():

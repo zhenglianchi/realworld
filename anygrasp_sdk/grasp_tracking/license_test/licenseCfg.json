@@ -1,0 +1,14 @@
+{
+    "version": "3.1.0",
+    "feature_id": "2811115587083331021",
+    "public_key": "LianchiZheng.public_key",
+    "signature": "LianchiZheng.signature",
+    "license": "LianchiZheng.lic",
+    "toolbox": [
+        {
+            "name": "Basic",
+            "type": "PERMANENT",
+            "data": ""
+        }
+    ]
+}

@@ -1,6 +1,7 @@
 from arguments import get_config
 from interfaces import setup_LMP
 from UR_Base import UR_BASE
+from Threads import Update_State_Thread, Execute_Thread
 import threading
 import time
 import os
@@ -8,6 +9,7 @@ import time
 import queue
 import shutil 
 import numpy as np
+
 
 #load config
 config_path = "configs/vlm_rlbench_config.yaml"
@@ -43,13 +45,12 @@ def run_voxposer_ui(instruction,file_lock,lmp_env,q):
     q.put(0)
 
 
-thread1 = threading.Thread(target=update_state, args=(instruction,file_lock,q,))
-thread2 = threading.Thread(target=run_voxposer_ui, args=(instruction,file_lock,lmp_env,q,))
+thread1 = Update_State_Thread(target=update_state, args=(instruction,file_lock,q,))
+thread2 = Execute_Thread(target=run_voxposer_ui, args=(instruction,file_lock,lmp_env,q,))
 
 thread1.start()
 while not os.path.exists(config["json_path"]):
     time.sleep(1)
-
 
 thread2.start()
 thread2.join()
