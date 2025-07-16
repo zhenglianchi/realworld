@@ -67,8 +67,10 @@ class LMP_interface():
     obs_dict['aabb'] = np.array([aabb_min, aabb_max])  # in voxel frame
     obs_dict['_position_world'] = np.mean(obj_pc, axis=0)  # in world frame
     obs_dict['_point_cloud_world'] = obj_pc  # in world frame
-    obs_dict['translation'] = grasp_pose['translation']  # in world frame
-    obs_dict['rotvec'] = grasp_pose['rotvec']  # in world frame
+    
+    if grasp_pose :
+      obs_dict['translation'] = grasp_pose['translation']  # in world frame
+      obs_dict['rotvec'] = grasp_pose['rotvec']  # in world frame
 
     object_obs = {"obs":Observation(obs_dict)}
     return object_obs
@@ -174,7 +176,7 @@ class LMP_interface():
       return grasp_pose, init, grasp_ids
 
 
-  def update_mask_entities(self,instruction,lock,q):
+  def update_mask_entities(self,instruction,lock,finished_event,grasp_event,grasp_object):
       if not os.path.exists("tmp/images"):
           os.makedirs("tmp/images")
       if not os.path.exists("tmp/masks"):
@@ -191,7 +193,7 @@ class LMP_interface():
       num = 0
       init = True
       grasp_ids = []
-      while q.empty():
+      while not finished_event.is_set():
         start_time = time.time()
         label_index = {}
         for item in objects:
@@ -241,20 +243,19 @@ class LMP_interface():
             pcd_downsampled = pcd.voxel_down_sample(voxel_size=0.0001)
             obj_points = np.asarray(pcd_downsampled.points)
 
-            color = np.array(frame.copy(), dtype=np.float32) / 255.0
-            meter_depth = np.array(meter_depth.copy(), dtype=np.float32)
-            workspace_mask = workspace_mask.astype(bool)
-
-            '''
-            后期优化为获取当前action_state的抓取物体的姿态
-            利用列表和锁机制
-            当action_state存在时并且为抓取时
-            去实现抓取物体
-            目前测试只抓取一个物体
-            '''
-            grasp_pose, init, grasp_ids = self.get_grasp_pose(color, meter_depth, workspace_mask, init, grasp_ids)
+            grasp_pose = None
+            # 如果有抓取事件，则进行抓取
+            if grasp_event.is_set():
+              grasp_name = grasp_object.get()
+              if grasp_name == label:
+                print(f"Grasping {label}!")
+                color = np.array(frame.copy(), dtype=np.float32) / 255.0
+                meter_depth = np.array(meter_depth.copy(), dtype=np.float32)
+                workspace_mask = workspace_mask.astype(bool)
+                grasp_pose, init, grasp_ids = self.get_grasp_pose(color, meter_depth, workspace_mask, init, grasp_ids)
 
             obs = self.get_obs(obj_points, label, grasp_pose)
+
             # 如果物体已经存在，则将新的相同的物体设定为object1，object2，以此类推
             if label in state.keys():
               old_label = label
@@ -275,17 +276,16 @@ class LMP_interface():
 
         state['gripper'] = self.get_ee_obs()
         state['workspace'] = self.get_table_obs()
-        # 将state保存为JSON文件
-        #print(state)
+
         write_state(state_json_path, state, lock)
         print(state)
+
         end_time = time.time()  # 记录结束时间
         print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated object state in {end_time - start_time:.3f}s{bcolors.ENDC}")
         plt.axis('off')
         plt.draw()
         plt.savefig(f"tmp/masks/mask_{num}.jpeg", bbox_inches='tight', pad_inches=0)
         num+=1
-        #plt.pause(0.01)
   
 
   def get_ee_pos(self):

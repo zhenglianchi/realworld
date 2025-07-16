@@ -32,21 +32,23 @@ instruction = "Pick up the mouse"
 
 # 创建锁
 file_lock = threading.Lock()
-q = queue.Queue()
+grasp_object = queue.Queue()
+grasp_event = threading.Event()
+finished_event = threading.Event()
 
-def update_state(instruction,file_lock,q):
-    lmp_env.update_mask_entities(instruction,file_lock,q)
+def update_state(instruction,file_lock,finished_event,grasp_event,grasp_object):
+    lmp_env.update_mask_entities(instruction,file_lock,finished_event,grasp_event,grasp_object)
     shutil.rmtree("tmp/images")
     shutil.rmtree("tmp/masks")
     os.remove(config["json_path"])
 
-def run_voxposer_ui(instruction,file_lock,lmp_env,q):
-    voxposer_ui(instruction,file_lock,lmp_env)
-    q.put(0)
+def run_voxposer_ui(instruction,file_lock,lmp_env,finished_event,grasp_event,grasp_object):
+    voxposer_ui(instruction,file_lock,lmp_env,grasp_event,grasp_object)
+    finished_event.set()
 
 
-thread1 = Update_State_Thread(target=update_state, args=(instruction,file_lock,q,))
-thread2 = Execute_Thread(target=run_voxposer_ui, args=(instruction,file_lock,lmp_env,q,))
+thread1 = Update_State_Thread(target=update_state, args=(instruction,file_lock,finished_event,grasp_event,grasp_object))
+thread2 = Execute_Thread(target=run_voxposer_ui, args=(instruction,file_lock,lmp_env,finished_event,grasp_event,grasp_object))
 
 thread1.start()
 while not os.path.exists(config["json_path"]):
@@ -55,6 +57,6 @@ while not os.path.exists(config["json_path"]):
 thread2.start()
 thread2.join()
 thread1.join()
-
-
+finished_event.clear()
+grasp_event.clear()
 

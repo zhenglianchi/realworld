@@ -16,13 +16,12 @@ class PathPlanner:
         self.config = planner_config
         self.map_size = map_size
 
-    def optimize(self, start_pos: np.ndarray, target_map: np.ndarray, obstacle_map: np.ndarray, object_centric = False):
+    def optimize(self, start_pos: np.ndarray, target_map: np.ndarray, obstacle_map: np.ndarray):
         """
         config:
             start_pos: (3,) np.ndarray, start position
             target_map: (map_size, map_size, map_size) np.ndarray, target_map
             obstacle_map: (map_size, map_size, map_size) np.ndarray, obstacle_map
-            object_centric: bool, whether the task is object centric (entity of interest is an object/part instead of robot)
         Returns:
             path: (n, 3) np.ndarray, path
             info: dict, info
@@ -47,7 +46,7 @@ class PathPlanner:
         path, current_pos = [start_pos], start_pos
         for i in range(self.config.max_steps):
             # calculate all nearby voxels around current position
-            all_nearby_voxels = self._calculate_nearby_voxel(current_pos, object_centric=object_centric)
+            all_nearby_voxels = self._calculate_nearby_voxel(current_pos)
             # calculate the score of all nearby voxels
             nearby_score = _costmap[all_nearby_voxels[:, 0], all_nearby_voxels[:, 1], all_nearby_voxels[:, 2]]
             # Find the minimum cost voxel
@@ -65,7 +64,7 @@ class PathPlanner:
                 break
         raw_path = np.array(path)
         # postprocess path
-        processed_path = self._postprocess_path(raw_path, raw_target_map, object_centric=object_centric)
+        processed_path = self._postprocess_path(raw_path, raw_target_map)
         # save info
         info['start_pos'] = start_pos
         info['target_map'] = target_map
@@ -88,33 +87,28 @@ class PathPlanner:
             assert np.isnan(costmap).sum() == 0, 'costmap contains nan'
             current_pos_discrete = current_pos.round().clip(0, self.map_size - 1).astype(int)
             current_cost = costmap[current_pos_discrete[0], current_pos_discrete[1], current_pos_discrete[2]]
-            nearby_locs = self._calculate_nearby_voxel(current_pos, object_centric=False)
+            nearby_locs = self._calculate_nearby_voxel(current_pos)
             nearby_equal = np.any(costmap[nearby_locs[:, 0], nearby_locs[:, 1], nearby_locs[:, 2]] < current_cost + stop_threshold)
             if nearby_equal:
                 return False
             return True
         return no_nearby_equal_criteria
 
-    def _calculate_nearby_voxel(self, current_pos, object_centric=False):
+    def _calculate_nearby_voxel(self, current_pos):
         # create a grid of nearby voxels
         half_size = int(2 * self.map_size / 100)
         offsets = np.arange(-half_size, half_size + 1)
         # our heuristics-based dynamics model only supports planar pushing -> only xy path is considered
-        if object_centric:
-            offsets_grid = np.array(np.meshgrid(offsets, offsets, [0])).T.reshape(-1, 3)
-            # Remove the [0, 0, 0] offset, which corresponds to the current position
-            offsets_grid = offsets_grid[np.any(offsets_grid != [0, 0, 0], axis=1)]
-        else:
-            offsets_grid = np.array(np.meshgrid(offsets, offsets, offsets)).T.reshape(-1, 3)
-            # Remove the [0, 0, 0] offset, which corresponds to the current position
-            offsets_grid = offsets_grid[np.any(offsets_grid != [0, 0, 0], axis=1)]
+        offsets_grid = np.array(np.meshgrid(offsets, offsets, offsets)).T.reshape(-1, 3)
+        # Remove the [0, 0, 0] offset, which corresponds to the current position
+        offsets_grid = offsets_grid[np.any(offsets_grid != [0, 0, 0], axis=1)]
         # Calculate all nearby voxel coordinates
         all_nearby_voxels = np.clip(current_pos + offsets_grid, 0, self.map_size - 1)
         # Remove duplicates, if any, caused by clipping
         all_nearby_voxels = np.unique(all_nearby_voxels, axis=0)
         return all_nearby_voxels
     
-    def _postprocess_path(self, path, raw_target_map, object_centric=False):
+    def _postprocess_path(self, path, raw_target_map):
         """
         Apply various postprocessing steps to the path.
         """
@@ -148,13 +142,6 @@ class PathPlanner:
             target_pos = np.argwhere(raw_target_map == 1)
             closest_target_idx = np.argmin(np.linalg.norm(target_pos - last_waypoint, axis=1))
             closest_target = target_pos[closest_target_idx]
-            # for object centric motion, we assume we can only push in the xy plane
-            if object_centric:
-                closest_target[2] = last_waypoint[2]
             path = np.append(path, [closest_target], axis=0)
-        # space out path more if task is object centric (so that we can push faster)
-        if object_centric:
-            k = self.config['pushing_skip_per_k']
-            path = np.concatenate([path[k:-1:k], path[-1:]])
         path = path.clip(0, self.map_size-1)
         return path

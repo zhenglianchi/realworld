@@ -70,6 +70,9 @@ class UR_BASE(object):
         self.rtde_c.servoL(pose, speed, acc, 0.01, 0.05, 300)
 
     def execute(self,movable_var, waypoint):
+        # 这里可以首先执行xyz操作
+        # 如果是最后一个点，则执行姿态变化
+        # 后续可以分成两个函数，一个是xyz，一个是姿态
         print(movable_var,waypoint)
 
     def ur_pose_to_matrix(self):

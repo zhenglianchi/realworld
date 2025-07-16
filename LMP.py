@@ -9,6 +9,7 @@ from transforms3d.quaternions import qinverse,qmult
 from scipy.spatial.transform import Rotation as R
 import queue
 from scipy.ndimage import distance_transform_edt
+from Threads import Low_Execute_Thread,traj_Thread,map_Thread
 import threading
 import time
 
@@ -37,6 +38,13 @@ class LMP:
 
         self.shared_queue = queue.Queue()
         self.quat_queue = queue.Queue()
+
+        self.movable_var = None
+        self.affordable_map = None
+        self.avoidance_map = None
+        self.rotation_map = None
+        self.velocity_map = None
+        self.gripper_map = None
 
     def get_last_filename(self,folder):
         while True:
@@ -79,8 +87,8 @@ class LMP:
 
         return planning
     
-    def get_state(self, state_json_path,lock):
-      state = read_state(state_json_path,lock)
+    def get_state(self, state_json_path, lock):
+      state = read_state(state_json_path, lock)
       return state
 
     def _vlmapi_call(self,image_path, query, planner ,action, objects):
@@ -119,8 +127,12 @@ class LMP:
         for i in range(closest_idx+1):
             self.shared_queue.get()
 
+    def get_map(self, map_lock):
+        with map_lock:
+            return self.movable_var, self.affordable_map, self.avoidance_map, self.rotation_map, self.velocity_map, self.gripper_map
 
-    def __get__affordable_map(self,action_state,lmp_env,object_state):
+
+    def __get__affordable_map(self,action_state,lmp_env,object_state,grasp_event,grasp_object):
         affordable_map = None
         affordable = action_state["affordable"]
         affordable_set = affordable["set"]
@@ -134,6 +146,8 @@ class LMP:
                 (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(affordable["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
             if move_mode == "grasp":
                 translation = eval(affordable["translation"])
+                grasp_event.set()
+                grasp_object.put(affordable_var)
             x = eval(affordable["x"])
             y = eval(affordable["y"])
             z = eval(affordable["z"])
@@ -211,36 +225,38 @@ class LMP:
         return velocity_map
 
 
-    def get_update_map(self, action_state, lock, lmp_env):
-        global _map_size, _resolution
-        _map_size = lmp_env._map_size
-        _resolution = lmp_env._resolution
-
-        object_state = self.get_state(self.state_json_path,lock)
-
-        affordable_map = self.__get__affordable_map(action_state,lmp_env,object_state)
-        rotation_map = self.__get__rotation_map(action_state,lmp_env,object_state)
-        velocity_map = self.__get__velocity_map(action_state,lmp_env,object_state)
-        gripper_map = self.__get__gripper_map(action_state,lmp_env,object_state)
-        avoidance_map = self.__get__avoidance_map(action_state,lmp_env,object_state)
-
-        movable = action_state["movable"]
-        #movable_var = object_state[movable]["obs"]
-        movable_var = lmp_env.get_ee_obs()["obs"]
-        object_centric = (not movable_var['name'] in EE_ALIAS)
-
-        return movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map, object_centric
-    
-    '''
-    后续get_update_map可以作为一个线程
-    其他函数直接调用返回值
-    不需要每次都调用一次函数
-    '''
-            
-    def __thread_update_traj(self, lmp_env, action_state, file_lock, update_stop_event, exec_stop_event):
+    def __thread_update_map(self, lmp_env, action_state, file_lock, update_stop_event, exec_stop_event, map_lock, grasp_event, grasp_object):
         while not update_stop_event.is_set():
             start_time = time.time()
-            movable_var, affordance_map, avoidance_map, rotation_map, velocity_map, gripper_map, object_centric = self.get_update_map(action_state, file_lock, lmp_env)
+
+            object_state = self.get_state(self.state_json_path,file_lock)
+
+            affordable_map = self.__get__affordable_map(action_state,lmp_env,object_state,grasp_event,grasp_object)
+            rotation_map = self.__get__rotation_map(action_state,lmp_env,object_state)
+            velocity_map = self.__get__velocity_map(action_state,lmp_env,object_state)
+            gripper_map = self.__get__gripper_map(action_state,lmp_env,object_state)
+            avoidance_map = self.__get__avoidance_map(action_state,lmp_env,object_state)
+
+            movable = action_state["movable"]
+            movable_var = object_state[movable]["obs"]
+
+            with map_lock:
+                self.movable_var = movable_var
+                self.affordable_map = affordable_map
+                self.avoidance_map = avoidance_map
+                self.rotation_map = rotation_map
+                self.velocity_map = velocity_map
+                self.gripper_map = gripper_map
+
+            end_time = time.time()
+            print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated map in {end_time - start_time:.3f}s{bcolors.ENDC}")
+
+
+            
+    def __thread_update_traj(self, lmp_env, action_state, file_lock, update_stop_event, exec_stop_event, map_lock):
+        while not update_stop_event.is_set():
+            start_time = time.time()
+            movable_var, affordance_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map(map_lock)
             if affordance_map is not None:
                 # Preprocess avoidance map
                 _avoidance_map = lmp_env._preprocess_avoidance_map(avoidance_map, affordance_map, movable_var)
@@ -248,8 +264,7 @@ class LMP:
                 start_pos = lmp_env.get_ee_pos().copy()  # 直接获取实时位置
                 
                 # Optimize path and log
-                path_voxel, planner_info = lmp_env._planner.optimize(start_pos, affordance_map, _avoidance_map,
-                                                                    object_centric=object_centric)
+                path_voxel, planner_info = lmp_env._planner.optimize(start_pos, affordance_map, _avoidance_map)
                 assert len(path_voxel) > 0, 'path_voxel is empty'
                 
                 trajectory = []
@@ -292,12 +307,12 @@ class LMP:
                 break
 
 
-    def __thread_execute_traj(self, lmp_env, action_state, file_lock, update_stop_event, exec_stop_event):
-        movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map, object_centric = self.get_update_map(action_state, file_lock, lmp_env)
+    def __thread_execute_traj(self, lmp_env, action_state, file_lock, update_stop_event, exec_stop_event, map_lock):
+        movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map(map_lock)
         if affordable_map is not None:
             i = 0
             while not exec_stop_event.is_set():
-                movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map, object_centric = self.get_update_map(action_state, file_lock, lmp_env)
+                movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map(map_lock)
                 if self.shared_queue.empty():
                     time.sleep(0.1)
                     continue
@@ -313,54 +328,37 @@ class LMP:
                     print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={movable_var['_position_world']}, target={queue_list[-1][0]} (distance: {np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0]):.3f})){bcolors.ENDC}")
                     exec_stop_event.set()
                     update_stop_event.set()
+                    '''
+                    令末端到达最后一个点
+                    这里可以考虑用强化学习来训练一个模型去预测抓取适配器的位置
+                    '''
+                    '''
+                    ee_pos_world = queue_list[-1][0]
+                    ee_rot_world = queue_list[-1][1]
+                    ee_pose_world = np.concatenate([ee_pos_world, ee_rot_world])
+                    ee_speed = queue_list[-1][2]
+                    gripper_state = queue_list[-1][3]
+                    lmp_env.ur5.apply_action(np.concatenate([ee_pose_world, [gripper_state]]))
+                    '''
                     break
 
                 # execute waypoint
                 controller_info = lmp_env.ur5.execute(movable_var, waypoint)
 
-                '''
-                后续有关object_centric进行优化
-                看是否专注于抓取与移动任务
-                还是具有更广泛的适用性例如推动、旋转、放置
-                '''
                 dist2target = np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0])
-                if not object_centric and controller_info['mp_info'] == -1:
-                    print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] failed waypoint {i+1} (wp: {waypoint[0].round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {queue_list[-1][0].round(3)}, start: {queue_list[0][0].round(3)}, dist2target: {dist2target.round(3)}); mp info: {controller_info["mp_info"]}{bcolors.ENDC}')
-                else:
-                    print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint {i+1} (wp: {waypoint[0].round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {queue_list[-1][0].round(3)}, start: {queue_list[0][0].round(3)}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
+                print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint {i+1} (wp: {waypoint[0].round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {queue_list[-1][0].round(3)}, start: {queue_list[0][0].round(3)}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
+                
                 i += 1
             print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] finished executing path via controller{bcolors.ENDC}')
 
-        if not object_centric:
-            try:
-                # traj_world: world_xyz, rotation, velocity, gripper
-                ee_pos_world = queue_list[-1][0]
-                ee_rot_world = queue_list[-1][1]
-                ee_pose_world = np.concatenate([ee_pos_world, ee_rot_world])
-                ee_speed = queue_list[-1][2]
-                gripper_state = queue_list[-1][3]
-            except:
-                # evaluate latest voxel map
-                _rotation_map = rotation_map
-                _velocity_map = velocity_map
-                _gripper_map = gripper_map
-                # get last ee pose
-                ee_pos_world = lmp_env.ur5.get_tcp()[:3]
-                ee_pos_voxel = lmp_env.get_ee_pos()
-                ee_rot_world = _rotation_map[ee_pos_voxel[0], ee_pos_voxel[1], ee_pos_voxel[2]]
-                ee_pose_world = np.concatenate([ee_pos_world, ee_rot_world])
-                ee_speed = _velocity_map[ee_pos_voxel[0], ee_pos_voxel[1], ee_pos_voxel[2]]
-                gripper_state = _gripper_map[ee_pos_voxel[0], ee_pos_voxel[1], ee_pos_voxel[2]]
-            # move to the final target
-            lmp_env.ur5.apply_action(np.concatenate([ee_pose_world, [gripper_state]]))
 
-
-    def __call__(self, query, file_lock, lmp_env):
+    def __call__(self, query, file_lock, lmp_env, grasp_event, grasp_object):
         planning = self.generate_planning(query)
         print(planning)
         planning_ = planning.copy()
         update_stop_event = threading.Event()
         exec_stop_event = threading.Event()
+        map_lock = threading.Lock()
         while len(planning) >= 0:
             action = planning.pop(0)
             action_state = None
@@ -377,26 +375,34 @@ class LMP:
                 filepath = self.get_last_filename(self.mask_path)
                 action_state  = self._vlmapi_call(filepath, query=query, planner=planning_, action=action, objects=self._context)
                 current_action = action_state["Action"]
-                with open(f"./tmp/{current_action}.json", 'w', encoding='utf-8') as json_file:
+                with open(f"./cache/{current_action}.json", 'w', encoding='utf-8') as json_file:
                     json.dump(action_state, json_file)
 
             print(action_state)
 
             # 启动更新路径的线程
-            update_thread = threading.Thread(target=self.__thread_update_traj, args=(lmp_env, action_state, file_lock, update_stop_event,exec_stop_event, ))
-            update_thread.daemon = True  # 设置为守护线程，随主线程退出
-            update_thread.start()
+            map_thread = map_Thread(target=self.__thread_update_map, args=(lmp_env, action_state, file_lock, update_stop_event,exec_stop_event,map_lock, grasp_event, grasp_object,))
+            map_thread.daemon = True  # 设置为守护线程，随主线程退出
+            map_thread.start()
+
+            # 启动更新路径的线程
+            traj_thread = traj_Thread(target=self.__thread_update_traj, args=(lmp_env, action_state, file_lock, update_stop_event,exec_stop_event,map_lock, ))
+            traj_thread.daemon = True  # 设置为守护线程，随主线程退出
+            traj_thread.start()
 
             # 启动执行路径的线程
-            execute_thread = threading.Thread(target=self.__thread_execute_traj, args=(lmp_env, action_state, file_lock, update_stop_event,exec_stop_event, ))
+            execute_thread = Low_Execute_Thread(target=self.__thread_execute_traj, args=(lmp_env, action_state, file_lock, update_stop_event,exec_stop_event,map_lock, ))
             execute_thread.daemon = True  # 设置为守护线程，随主线程退出
             execute_thread.start()
 
             execute_thread.join()
-            update_thread.join()
+            traj_thread.join()
+            map_thread.join()
 
             update_stop_event.clear()
             exec_stop_event.clear()
+            grasp_event.clear()
+            grasp_object.get_nowait()
 
             # Clear old queue and insert new trajectory
             while not self.shared_queue.empty():
