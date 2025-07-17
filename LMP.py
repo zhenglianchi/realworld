@@ -64,7 +64,7 @@ class LMP:
         if self._context :
             user_query = f"# Objects : {self._context}\n" + user_query
 
-        print(user_query)
+        #print(user_query)
 
         client = OpenAI(api_key=self.api_key,base_url=self.base_url)
         
@@ -141,13 +141,12 @@ class LMP:
             affordable_map = lmp_env._get_default_voxel_map('target')()
             affordable_var = affordable["object"]
             object = object_state[affordable_var]["obs"]
+            print(move_mode)
             if move_mode == "move":
                 center_x, center_y, center_z = eval(affordable["center_x, center_y, center_z"])
                 (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(affordable["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
             if move_mode == "grasp":
                 translation = eval(affordable["translation"])
-                grasp_event.set()
-                grasp_object.put(affordable_var)
             x = eval(affordable["x"])
             y = eval(affordable["y"])
             z = eval(affordable["z"])
@@ -223,6 +222,16 @@ class LMP:
             target_velocity = velocity["target_velocity"]
             velocity_map[:] = target_velocity
         return velocity_map
+
+    def init_map(self, lmp_env, action_state, file_lock, update_stop_event, exec_stop_event, map_lock, grasp_event, grasp_object):
+        affordable_map = None
+        affordable = action_state["affordable"]
+        affordable_set = affordable["set"]
+        if affordable_set != "default" :
+            affordable_map = True
+
+        self.affordable_map = affordable_map
+
 
 
     def __thread_update_map(self, lmp_env, action_state, file_lock, update_stop_event, exec_stop_event, map_lock, grasp_event, grasp_object):
@@ -379,6 +388,18 @@ class LMP:
                     json.dump(action_state, json_file)
 
             print(action_state)
+
+            affordable_var = action_state["affordable"]
+            move = affordable_var["move"]
+            if move == "grasp":
+                grasp_event.set()
+                object_name = affordable_var["object"]
+                print("抓取物体",object_name)
+                grasp_object.put(object_name)
+
+            self.init_map(lmp_env, action_state, file_lock, update_stop_event, exec_stop_event, map_lock, grasp_event, grasp_object)
+
+            time.sleep(10)
 
             # 启动更新路径的线程
             map_thread = map_Thread(target=self.__thread_update_map, args=(lmp_env, action_state, file_lock, update_stop_event,exec_stop_event,map_lock, grasp_event, grasp_object,))

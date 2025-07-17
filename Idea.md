@@ -1,6 +1,10 @@
 
 
-An embodied grasping method with spatial state awareness
+目前实现工作：
+
+1. 场景对齐：使用Qwen-VL实现对场景的实时性低的目标检测，然后使用yoloe的视觉提示，进行实时性更高的目标分割，同时将其位置信息等存入json**(stalter)**文件并保存供后期调用(后期是否可以使用queue存取，本地保存读取是否太消耗时间)
+2. 规划生成：根据图片送入Qwen-VL生成总体规划并根据总体规划生成对应的json结构化语言并保存本地供读取，根据抓取还是移动任务使用**anygrasp**得到抓取位姿并保存
+3. 轨迹规划：通过结构化语言利用**Voxposer**建图方式实现建图，并底层执行轨迹
 
 **1.Introduction**
 

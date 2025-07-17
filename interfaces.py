@@ -247,6 +247,7 @@ class LMP_interface():
             # 如果有抓取事件，则进行抓取
             if grasp_event.is_set():
               grasp_name = grasp_object.get()
+              grasp_object.put(grasp_name)
               if grasp_name == label:
                 print(f"Grasping {label}!")
                 color = np.array(frame.copy(), dtype=np.float32) / 255.0
@@ -255,16 +256,17 @@ class LMP_interface():
                 grasp_pose, init, grasp_ids = self.get_grasp_pose(color, meter_depth, workspace_mask, init, grasp_ids)
 
             obs = self.get_obs(obj_points, label, grasp_pose)
+            state[label] = obs
 
             # 如果物体已经存在，则将新的相同的物体设定为object1，object2，以此类推
-            if label in state.keys():
+            '''if label in state.keys():
               old_label = label
               label = label + str(label_index[label])
               obs["label"] = label
               state[label] = obs
               label_index[old_label] += 1
             else:
-               state[label] = obs
+               state[label] = obs'''
 
             x_min, y_min, x_max, y_max = box
             center_x = (x_min + x_max) / 2
@@ -278,7 +280,7 @@ class LMP_interface():
         state['workspace'] = self.get_table_obs()
 
         write_state(state_json_path, state, lock)
-        print(state)
+        #print(state)
 
         end_time = time.time()  # 记录结束时间
         print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated object state in {end_time - start_time:.3f}s{bcolors.ENDC}")
@@ -325,11 +327,6 @@ class LMP_interface():
     voxel_center = np.array(np.where(voxel_map == 1)).mean(axis=1)
     return voxel_center
 
-  def _get_scene_collision_voxel_map(self):
-    collision_points_world, _ = self._env.get_scene_3d_obs(ignore_robot=True)
-    collision_voxel = self._points_to_voxel_map(collision_points_world)
-    return collision_voxel
-
   def _get_default_voxel_map(self, type='target'):
     """returns default voxel map (defaults to current state)"""
     def fn_wrapper():
@@ -341,10 +338,11 @@ class LMP_interface():
         voxel_map = np.ones((self._map_size, self._map_size, self._map_size))
       elif type == 'gripper':
         # 这里gripper:1->0为张开;0->1为闭合
-        voxel_map = np.ones((self._map_size, self._map_size, self._map_size)) * self._env.get_last_gripper_action()
+        #voxel_map = np.ones((self._map_size, self._map_size, self._map_size)) * self._env.get_last_gripper_action()
+        voxel_map = np.ones((self._map_size, self._map_size, self._map_size))
       elif type == 'rotation':
-        voxel_map = np.zeros((self._map_size, self._map_size, self._map_size, 4))
-        voxel_map[:, :, :] = self._env.get_ee_quat()
+        voxel_map = np.zeros((self._map_size, self._map_size, self._map_size, 3))
+        voxel_map[:, :, :] = self.ur5.get_tcp()[3:]
       else:
         raise ValueError('Unknown voxel map type: {}'.format(type))
       voxel_map = VoxelIndexingWrapper(voxel_map)

@@ -28,7 +28,7 @@ ur5 = UR_BASE("192.168.111.10",fisrt_tcp=init_pose)
 voxposer_ui, lmp_env = setup_LMP(config,ur5)
 
 #instruction = input("请输入指令")
-instruction = "Pick up the mouse"
+instruction = "only grasp the mouse"
 
 # 创建锁
 file_lock = threading.Lock()
