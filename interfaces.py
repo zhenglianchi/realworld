@@ -146,9 +146,6 @@ class LMP_interface():
         init = False
       else:
         target_gg, grasp_ids = infer_grasps(color, meter_depth, workspace_mask, self.camera, init, grasp_ids)
-      
-      print(grasp_ids)
-      print(target_gg)
 
       grasp_pose = None
       gg_final = target_gg[0]
@@ -222,9 +219,6 @@ class LMP_interface():
             mask =  mask.reshape(h, w).reshape(-1)
 
             masks.append(mask)
-            # estimate normals using o3d
-            pcd = o3d.geometry.PointCloud()
-            pcd.points = o3d.utility.Vector3dVector(points[-1])
 
             points, masks = np.array(points), np.array(masks)
             obj_points = points[np.isin(masks, 1)]
@@ -240,7 +234,7 @@ class LMP_interface():
             # voxel downsample using o3d
             pcd = o3d.geometry.PointCloud()
             pcd.points = o3d.utility.Vector3dVector(obj_points)
-            pcd_downsampled = pcd.voxel_down_sample(voxel_size=0.0001)
+            pcd_downsampled = pcd.voxel_down_sample(voxel_size=0.001)
             obj_points = np.asarray(pcd_downsampled.points)
 
             grasp_pose = None
@@ -249,7 +243,7 @@ class LMP_interface():
               grasp_name = grasp_object.get()
               grasp_object.put(grasp_name)
               if grasp_name == label:
-                print(f"Grasping {label}!")
+                #print(f"Grasping {label}!")
                 color = np.array(frame.copy(), dtype=np.float32) / 255.0
                 meter_depth = np.array(meter_depth.copy(), dtype=np.float32)
                 workspace_mask = workspace_mask.astype(bool)
@@ -257,16 +251,6 @@ class LMP_interface():
 
             obs = self.get_obs(obj_points, label, grasp_pose)
             state[label] = obs
-
-            # 如果物体已经存在，则将新的相同的物体设定为object1，object2，以此类推
-            '''if label in state.keys():
-              old_label = label
-              label = label + str(label_index[label])
-              obs["label"] = label
-              state[label] = obs
-              label_index[old_label] += 1
-            else:
-               state[label] = obs'''
 
             x_min, y_min, x_max, y_max = box
             center_x = (x_min + x_max) / 2
@@ -299,6 +283,31 @@ class LMP_interface():
   # ======================================================
   # == helper functions
   # ======================================================
+  def get_scene_3d_obs(self):
+      color, meter_depth = self.camera.get_aligned_images()
+      # 这里创建的点云，原点为相机坐标系中心
+      pcd_ = self.camera.create_point_cloud_from_depth_image(meter_depth)
+
+      points = np.array(pcd_.reshape(-1, 3))
+
+      # 这里将相机下的点云转换到世界坐标系下
+      T_camera_to_base = self.camera.get_extrinsic_matrix()
+      points = self.transform_points_to_world(points, T_camera_to_base)
+
+      # voxel downsample using o3d
+      pcd = o3d.geometry.PointCloud()
+      pcd.points = o3d.utility.Vector3dVector(points)
+      pcd_downsampled = pcd.voxel_down_sample(voxel_size=0.001)
+      points = np.asarray(pcd_downsampled.points)
+
+      return points
+
+
+  def _get_scene_collision_voxel_map(self):
+    collision_points_world = self.get_scene_3d_obs()
+    collision_voxel = self._points_to_voxel_map(collision_points_world)
+    return collision_voxel
+  
   def _world_to_voxel(self, world_xyz):
     _world_xyz = world_xyz.astype(np.float32)
     _voxels_bounds_robot_min = self.ur5.workspace_bounds_min.astype(np.float32)

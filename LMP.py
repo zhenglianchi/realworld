@@ -46,6 +46,8 @@ class LMP:
         self.velocity_map = None
         self.gripper_map = None
 
+        self.move = None
+
     def get_last_filename(self,folder):
         while True:
             filenames = os.listdir(folder)
@@ -141,7 +143,6 @@ class LMP:
             affordable_map = lmp_env._get_default_voxel_map('target')()
             affordable_var = affordable["object"]
             object = object_state[affordable_var]["obs"]
-            print(move_mode)
             if move_mode == "move":
                 center_x, center_y, center_z = eval(affordable["center_x, center_y, center_z"])
                 (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(affordable["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
@@ -151,6 +152,7 @@ class LMP:
             y = eval(affordable["y"])
             z = eval(affordable["z"])
             target_affordance = affordable["target_affordance"]
+            x,y,z = lmp_env._world_to_voxel(np.array([x,y,z]))
             affordable_map[x,y,z] = target_affordance
         return affordable_map
     
@@ -197,20 +199,6 @@ class LMP:
     
     def __get__rotation_map(self,action_state,lmp_env,object_state):
         rotation_map = lmp_env._get_default_voxel_map('rotation')()
-        rotation = action_state["rotation"]
-        rotation_set = rotation["set"]
-        if rotation_set != "default" and self.quat_queue.empty():
-            rotation_var = action_state["rotation"]["object"]
-            if rotation_var not in object_state.keys():
-                print(f"Object {rotation_var} not found in scene in this step.")
-                pass
-            object = object_state[rotation_var]["obs"]
-            target_rotation = eval(rotation["target_rotation"])
-            current_rotation = lmp_env.ur5.get_tcp()[3:]
-            quat_traj = lmp_env.interpolate_quaternions(current_rotation.tolist(), target_rotation.tolist(), 9)
-            #rotation_map[:, :, :] = target_rotation
-            '''for wp in quat_traj:
-                self.quat_queue.put(wp)'''
 
         return rotation_map
     
@@ -223,18 +211,21 @@ class LMP:
             velocity_map[:] = target_velocity
         return velocity_map
 
-    def init_map(self, lmp_env, action_state, file_lock, update_stop_event, exec_stop_event, map_lock, grasp_event, grasp_object):
-        affordable_map = None
+    def init_map(self, action_state):
         affordable = action_state["affordable"]
         affordable_set = affordable["set"]
         if affordable_set != "default" :
-            affordable_map = True
+            self.move = True
+        else:
+            self.move = False
 
-        self.affordable_map = affordable_map
 
 
 
     def __thread_update_map(self, lmp_env, action_state, file_lock, update_stop_event, exec_stop_event, map_lock, grasp_event, grasp_object):
+        global _map_size, _resolution
+        _map_size = lmp_env._map_size
+        _resolution = lmp_env._resolution
         while not update_stop_event.is_set():
             start_time = time.time()
 
@@ -266,7 +257,7 @@ class LMP:
         while not update_stop_event.is_set():
             start_time = time.time()
             movable_var, affordance_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map(map_lock)
-            if affordance_map is not None:
+            if self.move:
                 # Preprocess avoidance map
                 _avoidance_map = lmp_env._preprocess_avoidance_map(avoidance_map, affordance_map, movable_var)
 
@@ -275,6 +266,8 @@ class LMP:
                 # Optimize path and log
                 path_voxel, planner_info = lmp_env._planner.optimize(start_pos, affordance_map, _avoidance_map)
                 assert len(path_voxel) > 0, 'path_voxel is empty'
+
+                print(path_voxel)
                 
                 trajectory = []
                 # Convert voxel path to world trajectory, and include rotation, velocity, and gripper information
@@ -282,11 +275,10 @@ class LMP:
                     voxel_xyz = path_voxel[i]
                     world_xyz = lmp_env._voxel_to_world(voxel_xyz)
                     voxel_xyz = np.round(voxel_xyz).astype(int)
-                    if not self.quat_queue.empty():
-                        rotation = self.quat_queue.get().tolist()
-                        rotation_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]] = rotation
-                    else:
-                        rotation = lmp_env.ur5.get_tcp()[3:]
+
+                    rotation = lmp_env.ur5.get_tcp()[3:]
+                    rotation_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]] = rotation
+                    
                     velocity = velocity_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
                     gripper = gripper_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
                     
@@ -317,10 +309,10 @@ class LMP:
 
 
     def __thread_execute_traj(self, lmp_env, action_state, file_lock, update_stop_event, exec_stop_event, map_lock):
-        movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map(map_lock)
-        if affordable_map is not None:
+        if self.move:
             i = 0
             while not exec_stop_event.is_set():
+                # 这里后期可以优化
                 movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map(map_lock)
                 if self.shared_queue.empty():
                     time.sleep(0.1)
@@ -397,19 +389,23 @@ class LMP:
                 print("抓取物体",object_name)
                 grasp_object.put(object_name)
 
-            self.init_map(lmp_env, action_state, file_lock, update_stop_event, exec_stop_event, map_lock, grasp_event, grasp_object)
+            self.init_map(action_state)
 
-            time.sleep(10)
+            time.sleep(5)
 
             # 启动更新路径的线程
             map_thread = map_Thread(target=self.__thread_update_map, args=(lmp_env, action_state, file_lock, update_stop_event,exec_stop_event,map_lock, grasp_event, grasp_object,))
             map_thread.daemon = True  # 设置为守护线程，随主线程退出
             map_thread.start()
 
+            time.sleep(5)
+
             # 启动更新路径的线程
             traj_thread = traj_Thread(target=self.__thread_update_traj, args=(lmp_env, action_state, file_lock, update_stop_event,exec_stop_event,map_lock, ))
             traj_thread.daemon = True  # 设置为守护线程，随主线程退出
             traj_thread.start()
+
+            time.sleep(5)
 
             # 启动执行路径的线程
             execute_thread = Low_Execute_Thread(target=self.__thread_execute_traj, args=(lmp_env, action_state, file_lock, update_stop_event,exec_stop_event,map_lock, ))

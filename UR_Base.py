@@ -51,7 +51,7 @@ class UR_BASE(object):
     def get_joint(self):
         return self.rtde_r.getActualQ()
 
-    def moveL(self, pose, asy=True, speed=0.005, acc=0.005):
+    def moveL(self, pose, asy=True, speed=0.008, acc=0.008):
         pose = pose.tolist()
         self.rtde_c.moveL(pose, speed, acc, asy)
 
@@ -65,15 +65,56 @@ class UR_BASE(object):
     def speedL(self, ee_speed, acc=0.25, control_period=0.02):
         self.rtde_c.speedL(ee_speed, acc, control_period)
 
-    def servoL(self, pose, speed=0.01, acc=0.02):
+    def servoL(self, pose, speed=0.01, acc=0.02,time=2, lookahead_time=0.1, gain=300):
+
+        '''
+        控制机器人末端执行器以线性方式伺服移动到目标位姿（工具空间中）。
+        该方法适用于实时轨迹跟踪或动态目标更新的场景，如视觉伺服或远程操作。
+
+        参数:
+            pose (np.ndarray 或 list): 
+                期望的机器人末端目标位姿，格式为 [x, y, z, rx, ry, rz]，
+                分别表示笛卡尔坐标系中的位置（米）和欧拉角表示的姿态（弧度）。
+            
+            speed (float): 
+                目标速度（当前版本未使用，保留参数）。
+            
+            acc (float): 
+                目标加速度（当前版本未使用，保留参数）。
+            
+            time (float): 
+                每条指令持续时间（秒），函数会阻塞执行该时间。
+                控制指令在这段时间内生效。
+                推荐值:0.1 ~ 0.5 秒。
+            
+            lookahead_time (float): 
+                轨迹平滑时间（秒），用于减少急停急启，提升运动平滑性。
+                值越大越平滑，但响应延迟也越大。
+                有效范围：[0.03, 0.2],推荐值:0.1 秒。
+            
+            gain (float): 
+                比例增益，影响机器人对目标位姿的跟随精度。
+                值越大响应越快，但可能引起震荡。
+                有效范围：[100, 2000],推荐值:300。
+
+        返回:
+            无直接返回值，但通过底层 RTDE 接口发送伺服指令给机器人控制器。
+        '''
+
         pose = pose.tolist()
-        self.rtde_c.servoL(pose, speed, acc, 0.01, 0.05, 300)
+        self.rtde_c.servoL(pose, speed, acc, time, lookahead_time, gain)
 
     def execute(self,movable_var, waypoint):
         # 这里可以首先执行xyz操作
         # 如果是最后一个点，则执行姿态变化
         # 后续可以分成两个函数，一个是xyz，一个是姿态
-        print(movable_var,waypoint)
+        print("-----------------")
+        print("execute:")
+        print(waypoint)
+        point = np.concatenate((waypoint[0], waypoint[1]))
+        print(point)
+        self.servoL(point)
+        print("-----------------")
 
     def ur_pose_to_matrix(self):
         """

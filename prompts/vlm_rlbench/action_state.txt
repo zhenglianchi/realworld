@@ -63,7 +63,7 @@ Some external library APIs:
     },
     "rotation": {
         "object":"blue_block",
-        "target_rotation":"object['quat']",
+        "target_rotation":"object['rotvec']",
         "set":"rotation_map[:, :, :] = target_rotation"
     },
     "velocity": {
@@ -96,8 +96,7 @@ Some external library APIs:
         "(min_x, min_y, min_z), (max_x, max_y, max_z)":"object['aabb']",
         "x":"center_x",
         "y":"center_y",
-        "z":"center_z",object = object_state[rotation_var]["obs"]
-                target_rotation = eval(rotation["quat"])
+        "z":"center_z",
         "radius_cm": 2,
         "value":1,
         "set":"set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)"
@@ -170,7 +169,7 @@ Some external library APIs:
     },
     "rotation": {
         "object":"steak",
-        "target_rotation":"object['quat']",
+        "target_rotation":"object['rotvec']",
         "set":"rotation_map[:, :, :] = target_rotation"
     },
     "velocity": {
@@ -228,7 +227,7 @@ Some external library APIs:
     },
     "rotation": {
         "object":"plate",
-        "target_rotation":"object['quat']",
+        "target_rotation":"object['rotvec']",
         "set":"rotation_map[:, :, :] = target_rotation"
     },
     "velocity": {
