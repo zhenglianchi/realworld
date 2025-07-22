@@ -12,6 +12,11 @@ planner:
   target_spacing: 1
   max_curvature: 3
   pushing_skip_per_k: 5
+  
+  fast_num_candidates: 20
+  fast_alpha: 1.0
+  fast_beta: 2.0
+  fast_radius: 10
 
 visualizer:
   save_dir: ./visualizations

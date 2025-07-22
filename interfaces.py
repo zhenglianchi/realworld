@@ -1,7 +1,8 @@
 from LMP import LMP
 from utils import get_clock_time, normalize_vector, bcolors, Observation, VoxelIndexingWrapper
 import numpy as np
-from planners import PathPlanner
+from slow_planners import Slow_PathPlanner
+from fast_planners import Fast_PathPlanner
 import time
 from scipy.ndimage import distance_transform_edt
 import open3d as o3d
@@ -44,7 +45,8 @@ class LMP_interface():
     self._env_name = env_name
     self._cfg = lmp_config
     self._map_size = self._cfg['map_size']
-    self._planner = PathPlanner(planner_config, map_size=self._map_size)
+    self.slow_planner = Slow_PathPlanner(planner_config, map_size=self._map_size)
+    self.fast_planner = Fast_PathPlanner(planner_config, map_size=self._map_size)
     self.camera = Camera()
     self.ur5 = ur5
 
@@ -173,7 +175,7 @@ class LMP_interface():
       return grasp_pose, init, grasp_ids
 
 
-  def update_mask_entities(self,instruction,lock,finished_event,grasp_event,grasp_object):
+  def update_mask_entities(self,instruction,finished_event,grasp_event,grasp_object,state_manager):
       if not os.path.exists("tmp/images"):
           os.makedirs("tmp/images")
       if not os.path.exists("tmp/masks"):
@@ -263,8 +265,7 @@ class LMP_interface():
         state['gripper'] = self.get_ee_obs()
         state['workspace'] = self.get_table_obs()
 
-        write_state(state_json_path, state, lock)
-        #print(state)
+        state_manager.write_state(state)
 
         end_time = time.time()  # 记录结束时间
         print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated object state in {end_time - start_time:.3f}s{bcolors.ENDC}")

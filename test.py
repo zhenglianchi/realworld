@@ -1,5 +1,5 @@
 import numpy as np
-from planners import generate_fast_point_3d_vectorized
+from slow_planners import generate_fast_point_3d_vectorized
 
 # 创建一个 400x400x400 的代价图
 cost_map = np.random.rand(400, 400, 400) * 10
