@@ -372,6 +372,7 @@ class LMP:
             # 这里等待一个抓取位姿生成
             while grasp_event.is_set():
                 if init_grasp_finished.is_set():
+                    print("init grasp successful!")
                     break
                 else:
                     time.sleep(0.1)
