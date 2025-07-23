@@ -1,0 +1,14 @@
+{
+    "version": "3.1.0",
+    "feature_id": "3951083462585088896",
+    "public_key": "PengHuo.public_key",
+    "signature": "PengHuo.signature",
+    "license": "PengHuo.lic",
+    "toolbox": [
+        {
+            "name": "Basic",
+            "type": "PERMANENT",
+            "data": ""
+        }
+    ]
+}

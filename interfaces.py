@@ -175,13 +175,12 @@ class LMP_interface():
       return grasp_pose, init, grasp_ids
 
 
-  def update_mask_entities(self,instruction,finished_event,grasp_event,grasp_object,state_manager):
+  def update_mask_entities(self,instruction,finished_event,grasp_event,grasp_object,state_manager,init_grasp_finished):
       if not os.path.exists("tmp/images"):
           os.makedirs("tmp/images")
       if not os.path.exists("tmp/masks"):
           os.makedirs("tmp/masks")
       
-      state_json_path = f"tmp/state.json"
       state = {}
       plt.figure(figsize=(20, 20))
       frame, bbox_entities = self.qwen_vl_box(instruction)
@@ -245,12 +244,13 @@ class LMP_interface():
               grasp_name = grasp_object.get()
               grasp_object.put(grasp_name)
               if grasp_name == label:
-                #print(f"Grasping {label}!")
+                print(f"Grasping {label}!")
                 color = np.array(frame.copy(), dtype=np.float32) / 255.0
                 meter_depth = np.array(meter_depth.copy(), dtype=np.float32)
                 workspace_mask = workspace_mask.astype(bool)
                 grasp_pose, init, grasp_ids = self.get_grasp_pose(color, meter_depth, workspace_mask, init, grasp_ids)
-
+                init_grasp_finished.set()
+                
             obs = self.get_obs(obj_points, label, grasp_pose)
             state[label] = obs
 
@@ -360,11 +360,9 @@ class LMP_interface():
     return fn_wrapper
 
   
-  def _preprocess_avoidance_map(self, avoidance_map, affordance_map, movable_obs):
+  def _preprocess_avoidance_map(self, avoidance_map, ignore_mask, movable_obs):
     # collision avoidance
     scene_collision_map = self._get_scene_collision_voxel_map()
-    # anywhere within 15/100 indices of the target is ignored (to guarantee that we can reach the target)
-    ignore_mask = distance_transform_edt(1 - affordance_map)
     scene_collision_map[ignore_mask < int(0.15 * self._map_size)] = 0
     # anywhere within 15/100 indices of the start is ignored
     try:
