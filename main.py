@@ -25,12 +25,12 @@ voxel_visualizer = VoxelSceneVisualizer(
 )
 
 init_pose = np.array([
-    -0.31562,
-    -0.17153,
-    0.57808,
-    -1.0583,
-    -2.9459,
-    -0.03206
+    -0.21573,
+    -0.05917,
+    0.60087,
+    2.633,
+    -1.579,
+    -0.131
     ])
 ur5 = UR_BASE("192.168.111.10",fisrt_tcp=init_pose)
 

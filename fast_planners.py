@@ -7,9 +7,9 @@ class Fast_PathPlanner:
     Then apply several postprocessing steps to the path.
     (TODO: can be improved using more principled methods, including extension to whole-arm planning)
     """
-    def __init__(self, planner_config, map_size):
+    def __init__(self, planner_config):
         self.config = planner_config
-        self.map_size = map_size
+        self.map_size = self.config.map_size
 
     def generate_fast_point_3d_vectorized(self, current_pos, slow_points, cost_map):
         """
@@ -25,10 +25,10 @@ class Fast_PathPlanner:
         Returns:
         - fast_point: tuple(x, y, z)
         """
-        alpha = self.config.alpha
-        beta = self.config.beta
-        num_candidates = self.config.num_candidates
-        radius = self.config.radius
+        alpha = self.config.fast_alpha
+        beta = self.config.fast_beta
+        num_candidates = self.config.fast_num_candidates
+        radius = self.config.fast_radius
     
         map_shape = np.array(cost_map.shape)
         current_pos = np.array(current_pos, dtype=int)
@@ -50,12 +50,6 @@ class Fast_PathPlanner:
         valid_mask &= np.any(candidates != current_pos, axis=1)
         valid_candidates = candidates[valid_mask][:num_candidates]
 
-        # 如果合法点不足，补充到 num_candidates
-        while len(valid_candidates) < num_candidates:
-            new_candidate = current_pos + np.random.randint(-radius, radius + 1, size=3)
-            if np.all((new_candidate >= 0) & (new_candidate < map_shape)) and not np.array_equal(new_candidate, current_pos):
-                valid_candidates = np.vstack([valid_candidates, new_candidate])
-
         # 4. 批量计算偏移向量和方向一致性得分
         offsets = valid_candidates - current_pos
         offset_norms = np.linalg.norm(offsets, axis=1).reshape(-1, 1)
@@ -72,6 +66,7 @@ class Fast_PathPlanner:
 
         # 7. 找到最优点
         best_index = np.argmin(total_scores)
+
         best_point = valid_candidates[best_index]
 
-        return tuple(best_point)
+        return best_point

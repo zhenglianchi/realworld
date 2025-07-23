@@ -5,13 +5,15 @@ planner:
   savgol_polyorder: 3
   savgol_window_size: 20
   obstacle_map_weight: 1
-  max_steps: 5
+  max_steps: 1000
   obstacle_map_gaussian_sigma: 10
   target_map_weight: 2
   stop_criteria: no_nearby_equal
   target_spacing: 1
   max_curvature: 3
   pushing_skip_per_k: 5
+
+  map_size: 100
   
   fast_num_candidates: 20
   fast_alpha: 1.0

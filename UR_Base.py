@@ -51,7 +51,7 @@ class UR_BASE(object):
     def get_joint(self):
         return self.rtde_r.getActualQ()
 
-    def moveL(self, pose, asy=True, speed=0.008, acc=0.008):
+    def moveL(self, pose, asy=True, speed=0.02, acc=0.02):
         pose = pose.tolist()
         self.rtde_c.moveL(pose, speed, acc, asy)
 
@@ -104,13 +104,12 @@ class UR_BASE(object):
         pose = pose.tolist()
         self.rtde_c.servoL(pose, speed, acc, time, lookahead_time, gain)
 
-    def execute(self,movable_var, waypoint):
+    def execute(self, waypoint):
         # 这里可以首先执行xyz操作
         # 如果是最后一个点，则执行姿态变化
         # 后续可以分成两个函数，一个是xyz，一个是姿态
         print("-----------------")
         print("execute:")
-        print(waypoint)
         point = np.concatenate((waypoint[0], waypoint[1]))
         print(point)
         #self.servoL(point)

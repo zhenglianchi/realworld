@@ -62,6 +62,15 @@ def normalize_map(map):
         return map
     return (map - map.min()) / denom
 
+def normalize_map_gpu(x):
+    """GPU 版本的归一化"""
+    x_min = x.min()
+    x_max = x.max()
+    if x_max - x_min > 1e-8:
+        return (x - x_min) / (x_max - x_min)
+    else:
+        return x - x_min
+
 def calc_curvature(path):
     dx = np.gradient(path[:, 0])
     dy = np.gradient(path[:, 1])

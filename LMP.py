@@ -15,7 +15,8 @@ import time
 from scipy.ndimage import gaussian_filter
 from scipy.ndimage import distance_transform_edt
 from utils import get_clock_time, normalize_map
-from PIL import Image
+
+
 
 # creating some aliases for end effector and table in case LLMs refer to them differently (but rarely this happens)
 EE_ALIAS = ['ee', 'endeffector', 'end_effector', 'end effector', 'gripper', 'hand']
@@ -40,6 +41,7 @@ class LMP:
 
         self.update_stop_event = threading.Event()
         self.exec_stop_event = threading.Event()
+        self.init_map = threading.Event()
         self.map_lock = threading.Lock()
 
         self.shared_queue = queue.Queue()
@@ -217,12 +219,24 @@ class LMP:
         else:
             self.move = False
 
-    def get_map(self, map_lock):
-        with map_lock:
+    def get_map(self):
+        with self.map_lock:
             return self.movable_var, self.costmap, self.affordable_map, self.avoidance_map, self.rotation_map, self.velocity_map, self.gripper_map
+    
+    def get_cost_map(self,lmp_env, affordable_map, avoidance_map):
+        # costmap
+        target_map = distance_transform_edt(1 - affordable_map)
+        target_map = normalize_map(target_map)
+        obstacle_map = gaussian_filter(avoidance_map, sigma=lmp_env.slow_planner.config.obstacle_map_gaussian_sigma)
+        obstacle_map = normalize_map(obstacle_map)
+        # combine target_map and obstacle_map
+        costmap = target_map * lmp_env.slow_planner.config.target_map_weight + obstacle_map * lmp_env.slow_planner.config.obstacle_map_weight
+        costmap = normalize_map(costmap)
+
+        return costmap
 
 
-    def __thread_update_map(self, lmp_env, action_state,  grasp_event, grasp_object, state_manager):
+    def __thread_update_map(self, lmp_env, action_state, state_manager):
         global _map_size, _resolution
         _map_size = lmp_env._map_size
         _resolution = lmp_env._resolution
@@ -231,7 +245,7 @@ class LMP:
 
             object_state = state_manager.get_state(blocking=True, timeout=5.0)
 
-            affordable_map = self.__get__affordable_map(action_state,lmp_env,object_state,grasp_event,grasp_object)
+            affordable_map = self.__get__affordable_map(action_state,lmp_env,object_state)
             rotation_map = self.__get__rotation_map(action_state,lmp_env,object_state)
             velocity_map = self.__get__velocity_map(action_state,lmp_env,object_state)
             gripper_map = self.__get__gripper_map(action_state,lmp_env,object_state)
@@ -240,24 +254,18 @@ class LMP:
             movable = action_state["movable"]
             movable_var = object_state[movable]["obs"]
 
-            # costmap
-            target_map = distance_transform_edt(1 - affordable_map)
-            _avoidance_map = lmp_env._preprocess_avoidance_map(avoidance_map, target_map, movable_var)
-            target_map = normalize_map(target_map)
-            obstacle_map = gaussian_filter(_avoidance_map, sigma=lmp_env.slow_planner.config.obstacle_map_gaussian_sigma)
-            obstacle_map = normalize_map(obstacle_map)
-            # combine target_map and obstacle_map
-            costmap = target_map * lmp_env.slow_planner.config.target_map_weight + obstacle_map * lmp_env.slow_planner.config.obstacle_map_weight
-            costmap = normalize_map(costmap)
+            costmap = self.get_cost_map(lmp_env, affordable_map, avoidance_map)
 
             with self.map_lock:
                 self.movable_var = movable_var
                 self.costmap = costmap
                 self.affordable_map = affordable_map
-                self.avoidance_map = _avoidance_map
+                self.avoidance_map = avoidance_map
                 self.rotation_map = rotation_map
                 self.velocity_map = velocity_map
                 self.gripper_map = gripper_map
+
+                self.init_map.set()
 
             end_time = time.time()
             print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated map in {end_time - start_time:.3f}s{bcolors.ENDC}")
@@ -272,14 +280,14 @@ class LMP:
                 start_pos = lmp_env.get_ee_pos().copy()  # 直接获取实时位置
                 
                 # Optimize path and log
-                path_voxel, planner_info = lmp_env.slow_planner.optimize(start_pos, affordance_map, avoidance_map)
+                path_voxel = lmp_env.slow_planner.optimize(start_pos, affordance_map, avoidance_map)
                 assert len(path_voxel) > 0, 'path_voxel is empty'
                 
                 trajectory = []
                 # Convert voxel path to world trajectory
                 for i in range(len(path_voxel)):
                     voxel_xyz = path_voxel[i]
-                    trajectory.append((voxel_xyz))
+                    trajectory.append(voxel_xyz)
 
                 # Clear old queue and insert new trajectory
                 while not self.shared_queue.empty():
@@ -291,7 +299,7 @@ class LMP:
                     self.shared_queue.put(wp)
 
                 end_time = time.time()
-                print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated trajectory in {end_time - start_time:.3f}s{bcolors.ENDC}")
+                #print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated trajectory in {end_time - start_time:.3f}s{bcolors.ENDC}")
             else:
                 print("Gripper manipulation, no need to update traj")
                 break
@@ -306,12 +314,12 @@ class LMP:
                 if self.shared_queue.empty():
                     time.sleep(0.1)
                     continue
-                queue_list = list(self.shared_queue.queue)
+                queue_list = np.array(list(self.shared_queue.queue))
 
                 curr_xyz = movable_var['_position_world']
-                current_voxel_xyz = lmp_env._world_to_voxel(curr_xyz)
-                
-                voxel_xyz = self.fast_planner.generate_fast_point_3d_vectorized(current_voxel_xyz, queue_list, costmap)
+                current_voxel_xyz = np.array(lmp_env._world_to_voxel(curr_xyz))
+
+                voxel_xyz = lmp_env.fast_planner.generate_fast_point_3d_vectorized(current_voxel_xyz, queue_list, costmap)
                 world_xyz = lmp_env._voxel_to_world(voxel_xyz)
                 voxel_xyz = np.round(voxel_xyz).astype(int)
 
@@ -333,7 +341,7 @@ class LMP:
                     break
 
                 # execute waypoint
-                controller_info = lmp_env.ur5.execute(movable_var, waypoint)
+                lmp_env.ur5.execute(waypoint)
 
                 dist2target = np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0])
                 print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint {i+1} (wp: {waypoint[0].round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {queue_list[-1][0].round(3)}, start: {queue_list[0][0].round(3)}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
@@ -370,26 +378,24 @@ class LMP:
             self.init_grasp(action_state,grasp_event,grasp_object)
             
             # 这里等待一个抓取位姿生成
-            while grasp_event.is_set():
-                if init_grasp_finished.is_set():
-                    print("init grasp successful!")
-                    break
-                else:
-                    time.sleep(0.1)
-
+            init_grasp_finished.wait()
+            print("init grasp successful!")
+            
             # 启动更新路径的线程
-            map_thread = map_Thread(target=self.__thread_update_map, args=(lmp_env, action_state, grasp_event, grasp_object, state_manager))
+            map_thread = map_Thread(target=self.__thread_update_map, args=(lmp_env, action_state, state_manager))
             map_thread.daemon = True  # 设置为守护线程，随主线程退出
-            map_thread.start()
 
             # 启动更新路径的线程
             traj_thread = traj_Thread(target=self.__thread_update_traj, args=(lmp_env, ))
             traj_thread.daemon = True  # 设置为守护线程，随主线程退出
-            traj_thread.start()
 
             # 启动执行路径的线程
             execute_thread = Low_Execute_Thread(target=self.__thread_execute_traj, args=(lmp_env, ))
             execute_thread.daemon = True  # 设置为守护线程，随主线程退出
+            
+            map_thread.start()
+            self.init_map.wait()
+            traj_thread.start()
             execute_thread.start()
 
             execute_thread.join()
@@ -399,8 +405,10 @@ class LMP:
             self.update_stop_event.clear()
             self.exec_stop_event.clear()
             init_grasp_finished.clear()
+            self.init_map.clear()
             grasp_event.clear()
             grasp_object.get_nowait()
+            
 
             # Clear old queue and insert new trajectory
             while not self.shared_queue.empty():

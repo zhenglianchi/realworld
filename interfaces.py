@@ -46,7 +46,7 @@ class LMP_interface():
     self._cfg = lmp_config
     self._map_size = self._cfg['map_size']
     self.slow_planner = Slow_PathPlanner(planner_config, map_size=self._map_size)
-    self.fast_planner = Fast_PathPlanner(planner_config, map_size=self._map_size)
+    self.fast_planner = Fast_PathPlanner(planner_config)
     self.camera = Camera()
     self.ur5 = ur5
 
@@ -358,26 +358,6 @@ class LMP_interface():
       voxel_map = VoxelIndexingWrapper(voxel_map)
       return voxel_map
     return fn_wrapper
-
-  
-  def _preprocess_avoidance_map(self, avoidance_map, ignore_mask, movable_obs):
-    # collision avoidance
-    scene_collision_map = self._get_scene_collision_voxel_map()
-    scene_collision_map[ignore_mask < int(0.15 * self._map_size)] = 0
-    # anywhere within 15/100 indices of the start is ignored
-    try:
-      ignore_mask = distance_transform_edt(1 - movable_obs['occupancy_map'])
-      scene_collision_map[ignore_mask < int(0.15 * self._map_size)] = 0
-    except KeyError:
-      start_pos = movable_obs['position']
-      ignore_mask = np.ones_like(avoidance_map)
-      ignore_mask[start_pos[0] - int(0.1 * self._map_size):start_pos[0] + int(0.1 * self._map_size),
-                  start_pos[1] - int(0.1 * self._map_size):start_pos[1] + int(0.1 * self._map_size),
-                  start_pos[2] - int(0.1 * self._map_size):start_pos[2] + int(0.1 * self._map_size)] = 0
-      scene_collision_map *= ignore_mask
-    avoidance_map += scene_collision_map
-    avoidance_map = np.clip(avoidance_map, 0, 1)
-    return avoidance_map
 
 # ======================================================
 # jit-ready functions (for faster replanning time, need to install numba and add "@njit")
