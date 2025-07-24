@@ -300,7 +300,7 @@ class LMP:
                     self.shared_queue.put(wp)
 
                 end_time = time.time()
-                #print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated trajectory in {end_time - start_time:.3f}s{bcolors.ENDC}")
+                print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated trajectory in {end_time - start_time:.3f}s{bcolors.ENDC}")
             else:
                 print("Gripper manipulation, no need to update traj")
                 break
@@ -342,10 +342,10 @@ class LMP:
                     break
 
                 # execute waypoint
-                #lmp_env.ur5.execute(waypoint)
+                lmp_env.ur5.execute(waypoint)
 
                 dist2target = np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0])
-                #print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint {i+1} (wp: {waypoint[0].round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {queue_list[-1][0].round(3)}, start: {queue_list[0][0].round(3)}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
+                print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint {i+1} (wp: {waypoint[0].round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {queue_list[-1][0].round(3)}, start: {queue_list[0][0].round(3)}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
                 
                 i += 1
             print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] finished executing path via controller{bcolors.ENDC}')
@@ -397,20 +397,6 @@ class LMP:
             
             map_thread.start()
             self.init_map.wait()
-            # 生成文件名
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            action_name = action_state["Action"].replace(" ", "_")
-            filename = f"{timestamp}_{action_name}.html"
-
-            # 可视化
-            scenemap = lmp_env._get_scene_collision_voxel_map()
-            voxel_visualizer.visualize(
-                scenemap=scenemap,
-                costmap=self.costmap,
-                executed_path_voxel=[],
-                filename=filename,
-                show_cost_text=True
-            )
             traj_thread.start()
             execute_thread.start()
 
