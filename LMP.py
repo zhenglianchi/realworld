@@ -221,10 +221,9 @@ class LMP:
 
     def get_map(self):
         with self.map_lock:
-            return self.movable_var, self.costmap, self.affordable_map, self.avoidance_map, self.rotation_map, self.velocity_map, self.gripper_map
+            return self.movable_var, self.affordable_map, self.avoidance_map, self.rotation_map, self.velocity_map, self.gripper_map
     
     def get_cost_map(self,lmp_env, affordable_map, avoidance_map):
-        # costmap
         target_map = distance_transform_edt(1 - affordable_map)
         target_map = normalize_map(target_map)
         obstacle_map = gaussian_filter(avoidance_map, sigma=lmp_env.slow_planner.config.obstacle_map_gaussian_sigma)
@@ -244,7 +243,6 @@ class LMP:
             start_time = time.time()
 
             object_state = state_manager.get_state(blocking=True, timeout=5.0)
-            #print(object_state)
 
             affordable_map = self.__get__affordable_map(action_state,lmp_env,object_state)
             rotation_map = self.__get__rotation_map(action_state,lmp_env,object_state)
@@ -255,11 +253,8 @@ class LMP:
             movable = action_state["movable"]
             movable_var = object_state[movable]["obs"]
 
-            costmap = self.get_cost_map(lmp_env, affordable_map, avoidance_map)
-
             with self.map_lock:
                 self.movable_var = movable_var
-                self.costmap = costmap
                 self.affordable_map = affordable_map
                 self.avoidance_map = avoidance_map
                 self.rotation_map = rotation_map
@@ -276,19 +271,14 @@ class LMP:
     def __thread_update_traj(self, lmp_env):
         while not self.update_stop_event.is_set():
             start_time = time.time()
-            movable_var, costmap, affordance_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map()
+            movable_var, affordance_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map()
             if self.move:
                 start_pos = lmp_env.get_ee_pos().copy()  # 直接获取实时位置
                 
+                costmap = self.get_cost_map(lmp_env, affordance_map, avoidance_map)
                 # Optimize path and log
                 path_voxel = lmp_env.slow_planner.optimize(start_pos, affordance_map, costmap)
                 assert len(path_voxel) > 0, 'path_voxel is empty'
-                
-                trajectory = []
-                # Convert voxel path to world trajectory
-                for i in range(len(path_voxel)):
-                    voxel_xyz = path_voxel[i]
-                    trajectory.append(voxel_xyz)
 
                 # Clear old queue and insert new trajectory
                 while not self.shared_queue.empty():
@@ -296,7 +286,8 @@ class LMP:
                         self.shared_queue.get_nowait()
                     except Exception:
                         break
-                for wp in trajectory:
+
+                for wp in path_voxel:
                     self.shared_queue.put(wp)
 
                 end_time = time.time()
@@ -311,7 +302,7 @@ class LMP:
             i = 0
             while not self.exec_stop_event.is_set():
                 # 这里后期可以优化
-                movable_var, costmap, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map()
+                movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map()
                 if self.shared_queue.empty():
                     time.sleep(0.1)
                     continue
@@ -320,7 +311,9 @@ class LMP:
                 curr_xyz = movable_var['_position_world']
                 current_voxel_xyz = np.array(lmp_env._world_to_voxel(curr_xyz))
 
-                voxel_xyz = lmp_env.fast_planner.generate_fast_point_3d_vectorized(current_voxel_xyz, queue_list, costmap)
+                affordable_map = distance_transform_edt(1 - affordable_map)
+                affordable_map = normalize_map(affordable_map)
+                voxel_xyz = lmp_env.fast_planner.generate_fast_point_3d_vectorized(current_voxel_xyz, queue_list, affordable_map, avoidance_map)
                 world_xyz = lmp_env._voxel_to_world(voxel_xyz)
                 voxel_xyz = np.round(voxel_xyz).astype(int)
 
@@ -334,8 +327,8 @@ class LMP:
 
                 self.executed_path_voxel.append(voxel_xyz.copy())
 
-                # check if the movement is finished
-                if np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0]) <= 0.02:
+                # check if the movement is finished 5cm
+                if np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0]) <= 0.05:
                     print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={movable_var['_position_world']}, target={queue_list[-1][0]} (distance: {np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0]):.3f})){bcolors.ENDC}")
                     self.exec_stop_event.set()
                     self.update_stop_event.set()

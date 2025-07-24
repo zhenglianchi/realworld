@@ -1,72 +1,96 @@
-"""Greedy path planner."""
 import numpy as np
 
 class Fast_PathPlanner:
-    """
-    A greedy path planner that greedily chooses the next voxel with the lowest cost.
-    Then apply several postprocessing steps to the path.
-    (TODO: can be improved using more principled methods, including extension to whole-arm planning)
-    """
     def __init__(self, planner_config):
         self.config = planner_config
-        self.map_size = self.config.map_size
+        self.radius = self.config.fast_radius          # 推荐 2
+        self.num_candidates = self.config.fast_num_candidates  # 推荐 50
+        self.beta = self.config.fast_beta             # 方向权重
+        self.avoid_weight = self.config.avoid_weight  # 避障惩罚权重
 
-    def generate_fast_point_3d_vectorized(self, current_pos, slow_points, cost_map):
+    def generate_fast_point_3d_vectorized(self, current_pos, slow_points, affordable_map, avoidance_map):
         """
-        使用向量化加速，在 current_pos 附近随机采样候选点，选择最优 fast point。
+        快速局部决策：选择下一个执行点
+        输入均为 voxel 坐标，affordable_map 值越小越好，avoidance_map=1 为禁区
         
         Parameters:
-        - current_pos: 当前三维坐标 (x, y, z)
-        - slow_points: List of global (x, y, z) 的慢系统点
-        - cost_map: 3D numpy array, shape (400, 400, 400)
-        - alpha, beta: 权重系数
-        - num_candidates: 候选点数量
-        - radius: 候选点采样范围（相对于 current_pos）
+        - current_pos: (x, y, z) 当前位置 (int)
+        - slow_points: List[np.ndarray] 慢系统路径点 (N, 3), voxel 坐标
+        - affordable_map: (100,100,100) float, 0=目标, 1=不可去
+        - avoidance_map: (100,100,100) binary, 1=禁止进入
+        
         Returns:
-        - fast_point: tuple(x, y, z)
+        - next_pos: (x, y, z) 下一个 voxel 坐标
         """
-        alpha = self.config.fast_alpha
-        beta = self.config.fast_beta
-        num_candidates = self.config.fast_num_candidates
-        radius = self.config.fast_radius
-    
-        map_shape = np.array(cost_map.shape)
         current_pos = np.array(current_pos, dtype=int)
+        slow_points = np.array(slow_points)  # 确保是 numpy array
 
-        # 1. 找到最近的慢系统目标点
-        slow_points_array = np.array(slow_points)
-        distances = np.linalg.norm(slow_points_array - current_pos, axis=1)
-        slow_target = slow_points_array[np.argmin(distances)]
+        # 1. 找到最近的慢系统点作为引导方向
+        distances = np.linalg.norm(slow_points - current_pos, axis=1)
+        if len(distances) == 0:
+            return current_pos.copy()
+        nearest_idx = np.argmin(distances)
+        slow_target = slow_points[nearest_idx]
+        
+        # 如果已经非常接近目标，直接返回当前点（等待停止）
+        if distances[nearest_idx] < 1.0:
+            return current_pos.copy()
+
         direction_vec = slow_target - current_pos
-        direction_vec = direction_vec / (np.linalg.norm(direction_vec) + 1e-6)
+        direction_norm = np.linalg.norm(direction_vec)
+        if direction_norm < 1e-6:
+            return current_pos.copy()
+        unit_dir = direction_vec / direction_norm
 
-        # 2. 随机采样候选点（向量化）
-        np.random.seed(None)  # 可选：去掉固定种子
-        offsets = np.random.randint(-radius, radius + 1, size=(num_candidates * 2, 3))
-        candidates = current_pos + offsets
+        # 2. 生成候选点（在 radius 范围内）
+        r = self.radius
+        offsets = np.random.randint(-r, r + 1, size=(self.num_candidates, 3))
+        candidates = current_pos + offsets  # (N, 3)
 
-        # 3. 筛选合法候选点（在地图范围内，且不等于当前点）
-        valid_mask = np.all((candidates >= 0) & (candidates < map_shape), axis=1)
-        valid_mask &= np.any(candidates != current_pos, axis=1)
-        valid_candidates = candidates[valid_mask][:num_candidates]
+        # 3. 过滤非法候选点（边界 + 不等于当前点）
+        valid_mask = (
+            (candidates >= 0).all(axis=1) &
+            (candidates < 100).all(axis=1) &
+            ~((candidates == current_pos).all(axis=1))
+        )
+        valid_candidates = candidates[valid_mask]
+        if len(valid_candidates) == 0:
+            return current_pos.copy()
 
-        # 4. 批量计算偏移向量和方向一致性得分
-        offsets = valid_candidates - current_pos
-        offset_norms = np.linalg.norm(offsets, axis=1).reshape(-1, 1)
-        unit_offsets = offsets / (offset_norms + 1e-6)
+        # 4. 计算方向一致性得分（越接近目标方向越好）
+        offsets_valid = valid_candidates - current_pos
+        norms = np.linalg.norm(offsets_valid, axis=1).reshape(-1, 1) + 1e-6
+        unit_offsets = offsets_valid / norms
+        alignment = np.sum(unit_offsets * unit_dir, axis=1)  # [-1, 1]
+        angle_penalty = 1.0 - alignment  # 越小越好
 
-        dot_products = np.sum(unit_offsets * direction_vec, axis=1)
-        angle_scores = 1.0 - dot_products
+        # 5. 获取 affordable 得分（✅ 值越小越好 → 直接作为成本）
+        afford_values = affordable_map[
+            valid_candidates[:, 0],
+            valid_candidates[:, 1],
+            valid_candidates[:, 2]
+        ]  # shape: (M,)
 
-        # 5. 批量查询代价图
-        costs = cost_map[valid_candidates[:, 0], valid_candidates[:, 1], valid_candidates[:, 2]]
+        # 6. 获取 avoid 得分（✅ 1=禁止）
+        avoid_values = avoidance_map[
+            valid_candidates[:, 0],
+            valid_candidates[:, 1],
+            valid_candidates[:, 2]
+        ]  # 0 或 1
 
-        # 6. 计算总得分
-        total_scores = alpha * costs + beta * angle_scores
+        # 7. 综合评分（越小越好）
+        total_scores = (
+            self.beta * angle_penalty      # 方向对齐
+            + 1.0 * afford_values          # afford 值越小越好 → 直接加
+            + self.avoid_weight * avoid_values  # avoid=1 时惩罚
+        )
 
-        # 7. 找到最优点
-        best_index = np.argmin(total_scores)
+        # ✅ 强制避障：对 avoid=1 的点施加巨大惩罚
+        danger_mask = avoid_values > 0.5
+        total_scores[danger_mask] += 100.0  # 确保绝对不选
 
-        best_point = valid_candidates[best_index]
+        # 8. 选择最优
+        best_idx = np.argmin(total_scores)
+        best_point = valid_candidates[best_idx]
 
         return best_point
