@@ -19,8 +19,8 @@ class VoxelSceneVisualizer:
         costmap,
         executed_path_voxel,
         filename="scene_path.html",
-        max_scene_points=100,
-        max_costmap_points=100,
+        max_scene_points=1000,
+        max_costmap_points=1000,
         show_cost_text=True
     ):
         """

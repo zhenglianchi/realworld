@@ -5,7 +5,7 @@ planner:
   savgol_polyorder: 3
   savgol_window_size: 20
   obstacle_map_weight: 1
-  max_steps: 1000
+  max_steps: 100
   obstacle_map_gaussian_sigma: 10
   target_map_weight: 2
   stop_criteria: no_nearby_equal

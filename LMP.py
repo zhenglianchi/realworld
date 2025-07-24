@@ -36,7 +36,7 @@ class LMP:
         self.mask_path = "./tmp/masks/"
         self.image_path = "./tmp/images/"
         #set your api_key Qwen
-        self.api_key= "sk-2b726a0c6b6a4554b7834df6bac0b803"
+        self.api_key= "sk-df55df287b2c420285feb77137467576"
         self.base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
 
         self.update_stop_event = threading.Event()
@@ -244,6 +244,7 @@ class LMP:
             start_time = time.time()
 
             object_state = state_manager.get_state(blocking=True, timeout=5.0)
+            #print(object_state)
 
             affordable_map = self.__get__affordable_map(action_state,lmp_env,object_state)
             rotation_map = self.__get__rotation_map(action_state,lmp_env,object_state)
@@ -280,7 +281,7 @@ class LMP:
                 start_pos = lmp_env.get_ee_pos().copy()  # 直接获取实时位置
                 
                 # Optimize path and log
-                path_voxel = lmp_env.slow_planner.optimize(start_pos, affordance_map, avoidance_map)
+                path_voxel = lmp_env.slow_planner.optimize(start_pos, affordance_map, costmap)
                 assert len(path_voxel) > 0, 'path_voxel is empty'
                 
                 trajectory = []
@@ -341,17 +342,18 @@ class LMP:
                     break
 
                 # execute waypoint
-                lmp_env.ur5.execute(waypoint)
+                #lmp_env.ur5.execute(waypoint)
 
                 dist2target = np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0])
-                print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint {i+1} (wp: {waypoint[0].round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {queue_list[-1][0].round(3)}, start: {queue_list[0][0].round(3)}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
+                #print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint {i+1} (wp: {waypoint[0].round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {queue_list[-1][0].round(3)}, start: {queue_list[0][0].round(3)}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
                 
                 i += 1
             print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] finished executing path via controller{bcolors.ENDC}')
 
 
     def __call__(self, query, lmp_env, grasp_event, grasp_object, state_manager, voxel_visualizer, init_grasp_finished):
-        planning = self.generate_planning(query)
+        #planning = self.generate_planning(query)
+        planning = ['grasp the mouse']
         print(planning)
         planning_ = planning.copy()
         while len(planning) >= 0:
@@ -395,6 +397,20 @@ class LMP:
             
             map_thread.start()
             self.init_map.wait()
+            # 生成文件名
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            action_name = action_state["Action"].replace(" ", "_")
+            filename = f"{timestamp}_{action_name}.html"
+
+            # 可视化
+            scenemap = lmp_env._get_scene_collision_voxel_map()
+            voxel_visualizer.visualize(
+                scenemap=scenemap,
+                costmap=self.costmap,
+                executed_path_voxel=[],
+                filename=filename,
+                show_cost_text=True
+            )
             traj_thread.start()
             execute_thread.start()
 

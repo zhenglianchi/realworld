@@ -143,7 +143,7 @@ def smart_resize(image_path, factor = 28, vl_high_resolution_images = False):
 def get_world_bboxs_list(image_path,instruction):
 
     client = OpenAI(
-        api_key="sk-2b726a0c6b6a4554b7834df6bac0b803",
+        api_key="sk-df55df287b2c420285feb77137467576",
         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
     )
 
