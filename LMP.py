@@ -328,7 +328,7 @@ class LMP:
                 self.executed_path_voxel.append(voxel_xyz.copy())
 
                 # check if the movement is finished 5cm
-                if np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0]) <= 0.05:
+                if np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0]) <= 0.1:
                     print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={movable_var['_position_world']}, target={queue_list[-1][0]} (distance: {np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0]):.3f})){bcolors.ENDC}")
                     self.exec_stop_event.set()
                     self.update_stop_event.set()
@@ -372,9 +372,10 @@ class LMP:
 
             self.init_grasp(action_state,grasp_event,grasp_object)
             
-            # 这里等待一个抓取位姿生成
-            init_grasp_finished.wait()
-            print("init grasp successful!")
+            if self.move:
+                # 这里等待一个抓取位姿生成
+                init_grasp_finished.wait()
+                print("init grasp successful!")
             
             # 启动更新路径的线程
             map_thread = map_Thread(target=self.__thread_update_map, args=(lmp_env, action_state, state_manager))
@@ -413,8 +414,10 @@ class LMP:
                     break
 
             if self.move:
+                print("正在生成可视化文件...")
                 with self.map_lock:
-                    costmap = self.costmap.copy()
+                    movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map()
+                    costmap = self.get_cost_map(lmp_env, affordable_map, avoidance_map)
                 scenemap = lmp_env._get_scene_collision_voxel_map()
 
                 # 生成文件名
@@ -430,6 +433,7 @@ class LMP:
                     filename=filename,
                     show_cost_text=True
                 )
+                print("生成完毕...")
 
                 # 清空
             self.executed_path_voxel.clear()

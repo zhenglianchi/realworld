@@ -18,6 +18,7 @@ planner:
   fast_num_candidates: 20
   fast_alpha: 1.0
   fast_beta: 2.0
+  avoid_weight: 1.0
   fast_radius: 10
 
 visualizer:

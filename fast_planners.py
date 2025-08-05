@@ -6,6 +6,7 @@ class Fast_PathPlanner:
         self.radius = self.config.fast_radius          # 推荐 2
         self.num_candidates = self.config.fast_num_candidates  # 推荐 50
         self.beta = self.config.fast_beta             # 方向权重
+        self.fast_alpha = self.config.fast_alpha
         self.avoid_weight = self.config.avoid_weight  # 避障惩罚权重
 
     def generate_fast_point_3d_vectorized(self, current_pos, slow_points, affordable_map, avoidance_map):
@@ -81,7 +82,7 @@ class Fast_PathPlanner:
         # 7. 综合评分（越小越好）
         total_scores = (
             self.beta * angle_penalty      # 方向对齐
-            + 1.0 * afford_values          # afford 值越小越好 → 直接加
+            + self.fast_alpha * afford_values          # afford 值越小越好 → 直接加
             + self.avoid_weight * avoid_values  # avoid=1 时惩罚
         )
 
