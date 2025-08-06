@@ -15,11 +15,11 @@ planner:
 
   map_size: 100
   
-  fast_num_candidates: 20
+  fast_num_candidates: 15
   fast_alpha: 1.0
   fast_beta: 2.0
   avoid_weight: 1.0
-  fast_radius: 10
+  fast_radius: 5
 
 visualizer:
   save_dir: ./visualizations

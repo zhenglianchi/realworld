@@ -33,6 +33,7 @@ init_pose = np.array([
     -0.131
     ])
 ur5 = UR_BASE("192.168.111.10",fisrt_tcp=init_pose)
+time.sleep(5)
 
 voxposer_ui, lmp_env = setup_LMP(config,ur5)
 

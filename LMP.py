@@ -168,7 +168,7 @@ class LMP:
             radius_cm = avoidance["radius_cm"]
             value = avoidance["value"]
             avoidance_map = set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)
-        return avoidance_map
+        return np.array(avoidance_map)
     
     def __get__gripper_map(self,action_state,lmp_env,object_state):
         gripper_map = lmp_env._get_default_voxel_map('gripper')()
@@ -224,14 +224,12 @@ class LMP:
             return self.movable_var, self.affordable_map, self.avoidance_map, self.rotation_map, self.velocity_map, self.gripper_map
     
     def get_cost_map(self,lmp_env, affordable_map, avoidance_map):
-        target_map = distance_transform_edt(1 - affordable_map)
-        target_map = normalize_map(target_map)
+        target_map = affordable_map
         obstacle_map = gaussian_filter(avoidance_map, sigma=lmp_env.slow_planner.config.obstacle_map_gaussian_sigma)
         obstacle_map = normalize_map(obstacle_map)
         # combine target_map and obstacle_map
         costmap = target_map * lmp_env.slow_planner.config.target_map_weight + obstacle_map * lmp_env.slow_planner.config.obstacle_map_weight
         costmap = normalize_map(costmap)
-
         return costmap
 
 
@@ -239,16 +237,21 @@ class LMP:
         global _map_size, _resolution
         _map_size = lmp_env._map_size
         _resolution = lmp_env._resolution
+        init_blocking = True
+        update_count = 0
+        last_log_time = time.time()
         while not self.update_stop_event.is_set():
-            start_time = time.time()
-
-            object_state = state_manager.get_state(blocking=True, timeout=5.0)
+            object_state = state_manager.get_state(init_blocking, timeout=5.0)
+            init_blocking = False
 
             affordable_map = self.__get__affordable_map(action_state,lmp_env,object_state)
             rotation_map = self.__get__rotation_map(action_state,lmp_env,object_state)
             velocity_map = self.__get__velocity_map(action_state,lmp_env,object_state)
             gripper_map = self.__get__gripper_map(action_state,lmp_env,object_state)
             avoidance_map = self.__get__avoidance_map(action_state,lmp_env,object_state)
+
+            affordable_map = distance_transform_edt(1 - affordable_map)
+            affordable_map = normalize_map(affordable_map)
 
             movable = action_state["movable"]
             movable_var = object_state[movable]["obs"]
@@ -262,9 +265,15 @@ class LMP:
                 self.gripper_map = gripper_map
 
                 self.init_map.set()
-
-            end_time = time.time()
-            print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated map in {end_time - start_time:.3f}s{bcolors.ENDC}")
+                update_count += 1
+            
+            # 每2秒打印一次更新次数
+            current_time = time.time()
+            if current_time - last_log_time >= 2.0:
+                fps = update_count / (current_time - last_log_time)
+                print(f"{bcolors.OKGREEN}[interfaces.py | {get_clock_time()}] Map update rate: {update_count} updates in {current_time - last_log_time:.2f}s ({fps:.1f} Hz){bcolors.ENDC}")
+                update_count = 0
+                last_log_time = current_time
 
 
             
@@ -276,19 +285,18 @@ class LMP:
                 start_pos = lmp_env.get_ee_pos().copy()  # 直接获取实时位置
                 
                 costmap = self.get_cost_map(lmp_env, affordance_map, avoidance_map)
-                # Optimize path and log
-                path_voxel = lmp_env.slow_planner.optimize(start_pos, affordance_map, costmap)
-                assert len(path_voxel) > 0, 'path_voxel is empty'
 
                 # Clear old queue and insert new trajectory
-                while not self.shared_queue.empty():
-                    try:
-                        self.shared_queue.get_nowait()
-                    except Exception:
-                        break
+                with self.shared_queue.mutex:
+                    while not self.shared_queue.empty():
+                        try:
+                            self.shared_queue.get_nowait()
+                        except Exception:
+                            break
 
-                for wp in path_voxel:
-                    self.shared_queue.put(wp)
+                # Optimize path and log
+                lmp_env.slow_planner.optimize(start_pos, affordance_map, costmap, self.shared_queue)
+                assert self.shared_queue.empty(), 'path_voxel is empty'
 
                 end_time = time.time()
                 print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated trajectory in {end_time - start_time:.3f}s{bcolors.ENDC}")
@@ -299,21 +307,21 @@ class LMP:
 
     def __thread_execute_traj(self, lmp_env):
         if self.move:
-            i = 0
             while not self.exec_stop_event.is_set():
                 # 这里后期可以优化
                 movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map()
                 if self.shared_queue.empty():
                     time.sleep(0.1)
                     continue
-                queue_list = np.array(list(self.shared_queue.queue))
+                
+                with self.shared_queue.mutex:
+                    queue_list = list(self.shared_queue.queue)
+                print(self.shared_queue.queue)
 
                 curr_xyz = movable_var['_position_world']
                 current_voxel_xyz = np.array(lmp_env._world_to_voxel(curr_xyz))
 
-                affordable_map = distance_transform_edt(1 - affordable_map)
-                affordable_map = normalize_map(affordable_map)
-                voxel_xyz = lmp_env.fast_planner.generate_fast_point_3d_vectorized(current_voxel_xyz, queue_list, affordable_map, avoidance_map)
+                voxel_xyz = lmp_env.fast_planner.generate_fast_point_3d_vectorized(current_voxel_xyz, self.shared_queue, affordable_map, avoidance_map)
                 world_xyz = lmp_env._voxel_to_world(voxel_xyz)
                 voxel_xyz = np.round(voxel_xyz).astype(int)
 
@@ -328,20 +336,20 @@ class LMP:
                 self.executed_path_voxel.append(voxel_xyz.copy())
 
                 # check if the movement is finished 5cm
-                if np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0]) <= 0.1:
-                    print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={movable_var['_position_world']}, target={queue_list[-1][0]} (distance: {np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0]):.3f})){bcolors.ENDC}")
+                if np.linalg.norm(movable_var['_position_world'] - queue_list[-1]) <= 0.3:
+                    print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={movable_var['_position_world']}, target={queue_list[-1]} (distance: {np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0]):.3f})){bcolors.ENDC}")
                     self.exec_stop_event.set()
                     self.update_stop_event.set()
                     break
 
                 # execute waypoint
                 lmp_env.ur5.execute(waypoint)
+                time.sleep(0.1)
 
                 dist2target = np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0])
-                print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint {i+1} (wp: {waypoint[0].round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {queue_list[-1][0].round(3)}, start: {queue_list[0][0].round(3)}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
-                
-                i += 1
-            print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] finished executing path via controller{bcolors.ENDC}')
+                print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint: (wp: {waypoint[0].round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {queue_list[-1].round(3)}, start: {queue_list[0].round(3)}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
+
+
 
 
     def __call__(self, query, lmp_env, grasp_event, grasp_object, state_manager, voxel_visualizer, init_grasp_finished):
@@ -391,6 +399,7 @@ class LMP:
             
             map_thread.start()
             self.init_map.wait()
+
             traj_thread.start()
             execute_thread.start()
 

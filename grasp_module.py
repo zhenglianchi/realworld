@@ -53,7 +53,7 @@ def infer_grasps(color,depth,workspace_mask,camera, init, grasp_ids):
     else:
         grasp_ids = target_grasp_ids
 
-    if init:
-        vis_grasps(target_gg, points, colors)
+    '''if init:
+        vis_grasps(target_gg, points, colors)'''
 
     return target_gg, grasp_ids

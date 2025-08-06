@@ -11,7 +11,7 @@ class StateManager:
         self.log_interval = log_interval  # 日志打印间隔
 
         # 保护共享状态的锁
-        self._lock = threading.RLock()
+        self._lock = threading.Lock()
 
         # 当前缓存的状态和最后修改时间
         self._state: Optional[Dict[Any, Any]] = None
