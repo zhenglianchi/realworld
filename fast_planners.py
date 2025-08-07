@@ -15,7 +15,7 @@ class Fast_PathPlanner:
 
         # 1. 找到最近的慢系统点作为引导方向
         distances = np.linalg.norm(slow_points - current_pos, axis=1)
-        print(f"distances: {distances}")
+        #print(f"distances: {distances}")
 
         nearest_idx = np.argmin(distances)
         slow_target = slow_points[nearest_idx].astype(int)  # 转为整数 voxel 坐标
@@ -34,8 +34,8 @@ class Fast_PathPlanner:
         offsets = np.random.randint(-r, r + 1, size=(self.num_candidates, 3))
         candidates = current_pos + offsets  # (N, 3)
 
-        print(f"dynamic_radius: {dynamic_radius}")
-        print(f"candidates: {candidates}")
+        #print(f"dynamic_radius: {dynamic_radius}")
+        #print(f"candidates: {candidates}")
 
         # 3. 过滤非法候选点（边界 + 不等于当前点）
         shape = affordable_map.shape  # 推荐使用 shape 而非硬编码 100
@@ -47,7 +47,7 @@ class Fast_PathPlanner:
         )
         valid_candidates = candidates[valid_mask]
         valid_candidates = valid_candidates.astype(int)
-        print(f"valid_candidates after filtering: {valid_candidates}")
+        #print(f"valid_candidates after filtering: {valid_candidates}")
 
         # ✅ 新增：强制加入 slow_target（如果尚未包含）
         if not np.any((valid_candidates == slow_target).all(axis=1)):
@@ -56,7 +56,7 @@ class Fast_PathPlanner:
                 0 <= slow_target[1] < shape[1] and 
                 0 <= slow_target[2] < shape[2]):
                 valid_candidates = np.vstack([valid_candidates, slow_target])
-                print(f"Added slow_target {slow_target} to candidates")
+                #print(f"Added slow_target {slow_target} to candidates")
             else:
                 print(f"slow_target {slow_target} is out of bounds, not added")
         else:
@@ -72,7 +72,7 @@ class Fast_PathPlanner:
         unit_offsets = offsets_valid / norms
         alignment = np.sum(unit_offsets * unit_dir, axis=1)  # [-1, 1]
         angle_penalty = 1.0 - alignment  # 越小越好
-        print(f"angle_penalty: {angle_penalty}")
+        #print(f"angle_penalty: {angle_penalty}")
 
         # 5. 获取 affordable 得分
         afford_values = affordable_map[
@@ -99,7 +99,7 @@ class Fast_PathPlanner:
         danger_mask = avoid_values > 0.5
         total_scores[danger_mask] += 100.0
 
-        print(f"total_scores: {total_scores}")
+        #print(f"total_scores: {total_scores}")
 
         # 8. 选择最优
         best_idx = np.argmin(total_scores)

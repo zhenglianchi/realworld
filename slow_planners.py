@@ -5,6 +5,7 @@ from scipy.ndimage import distance_transform_edt
 from scipy.signal import savgol_filter
 from utils import get_clock_time, normalize_map, calc_curvature
 import queue
+import threading
 
 class Slow_PathPlanner:
     """
@@ -16,7 +17,7 @@ class Slow_PathPlanner:
         self.config = planner_config
         self.map_size = map_size
 
-    def optimize(self, start_pos: np.ndarray, target_map: np.ndarray ,costmap: np.ndarray, path_voxel: queue.Queue):
+    def optimize(self, start_pos: np.ndarray, target_map: np.ndarray ,costmap: np.ndarray, path_voxel: queue.Queue, queue_lock: threading.Lock):
         """
         config:
             start_pos: (3,) np.ndarray, start position
@@ -52,7 +53,7 @@ class Slow_PathPlanner:
                 break
         raw_path = np.array(path)
         # postprocess path
-        self._postprocess_path(raw_path, raw_target_map, path_voxel)
+        self._postprocess_path(raw_path, raw_target_map, path_voxel, queue_lock)
     
     def _get_stop_criteria(self):
         def no_nearby_equal_criteria(current_pos, costmap, stop_threshold):
@@ -83,7 +84,7 @@ class Slow_PathPlanner:
         all_nearby_voxels = np.unique(all_nearby_voxels, axis=0)
         return all_nearby_voxels
     
-    def _postprocess_path(self, path, raw_target_map, path_voxel):
+    def _postprocess_path(self, path, raw_target_map, path_voxel, queue_lock):
         """
         Apply various postprocessing steps to the path.
         """
@@ -119,6 +120,7 @@ class Slow_PathPlanner:
             closest_target = target_pos[closest_target_idx]
             path = np.append(path, [closest_target], axis=0)
         path = path.clip(0, self.map_size-1)
-        with path_voxel.mutex:
+        
+        with queue_lock:
             for i in range(len(path)):
                 path_voxel.put(path[i])

@@ -43,9 +43,9 @@ class LMP:
         self.exec_stop_event = threading.Event()
         self.init_map = threading.Event()
         self.map_lock = threading.Lock()
+        self.queue_lock = threading.Lock()
 
         self.shared_queue = queue.Queue()
-        self.quat_queue = queue.Queue()
         self.executed_path_voxel = []
 
         self.movable_var = None
@@ -286,17 +286,18 @@ class LMP:
                 
                 costmap = self.get_cost_map(lmp_env, affordance_map, avoidance_map)
 
+                # Optimize path and log
+                lmp_env.slow_planner.optimize(start_pos, affordance_map, costmap, self.shared_queue, self.queue_lock)
+
+                assert self.shared_queue.empty(), 'path_voxel is empty'
+
                 # Clear old queue and insert new trajectory
-                with self.shared_queue.mutex:
+                with self.queue_lock:
                     while not self.shared_queue.empty():
                         try:
                             self.shared_queue.get_nowait()
                         except Exception:
                             break
-
-                # Optimize path and log
-                lmp_env.slow_planner.optimize(start_pos, affordance_map, costmap, self.shared_queue)
-                assert self.shared_queue.empty(), 'path_voxel is empty'
 
                 end_time = time.time()
                 print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated trajectory in {end_time - start_time:.3f}s{bcolors.ENDC}")
@@ -310,13 +311,12 @@ class LMP:
             while not self.exec_stop_event.is_set():
                 # 这里后期可以优化
                 movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map()
-                if self.shared_queue.empty():
+
+                while self.shared_queue.empty():
                     time.sleep(0.1)
-                    continue
-                
-                with self.shared_queue.mutex:
+
+                with self.queue_lock:
                     queue_list = list(self.shared_queue.queue)
-                print(self.shared_queue.queue)
 
                 curr_xyz = movable_var['_position_world']
                 current_voxel_xyz = np.array(lmp_env._world_to_voxel(curr_xyz))
@@ -344,7 +344,7 @@ class LMP:
 
                 # execute waypoint
                 lmp_env.ur5.execute(waypoint)
-                time.sleep(0.1)
+                time.sleep(0.8)
 
                 dist2target = np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0])
                 print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint: (wp: {waypoint[0].round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {queue_list[-1].round(3)}, start: {queue_list[0].round(3)}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')

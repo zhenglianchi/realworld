@@ -16,7 +16,7 @@ class UR_BASE(object):
             self.moveL(fisrt_tcp)
 
     def reset_to_default_pose(self):
-        self.moveL(self.init_pose)
+        self.moveL(self.init_pose,speed=0.1,acc=0.1)
         
     def set_digital_out(self, num, bool):
         self.rob.set_digital_out(num, bool)
