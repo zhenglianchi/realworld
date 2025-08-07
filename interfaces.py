@@ -240,6 +240,8 @@ class LMP_interface():
 
             grasp_pose = None
             # 如果有抓取事件，则进行抓取
+            test1 = time.time()
+            print("yoloe time: ",test1-start_time)
             if grasp_event.is_set():
               grasp_name = grasp_object.get()
               grasp_object.put(grasp_name)
@@ -250,6 +252,8 @@ class LMP_interface():
                 workspace_mask = workspace_mask.astype(bool)
                 grasp_pose, init, grasp_ids = self.get_grasp_pose(color, meter_depth, workspace_mask, init, grasp_ids)
                 init_grasp_finished.set()
+                test2 = time.time()
+                print("anygrasp time: ",test2-test1)
                 
             obs = self.get_obs(obj_points, label, grasp_pose)
             state[label] = obs
