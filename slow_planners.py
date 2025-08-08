@@ -17,17 +17,14 @@ class Slow_PathPlanner:
         self.config = planner_config
         self.map_size = map_size
 
-    def optimize(self, start_pos: np.ndarray, target_map: np.ndarray ,costmap: np.ndarray, path_voxel: queue.Queue, queue_lock: threading.Lock):
+    def optimize(self, start_pos: np.ndarray, costmap: np.ndarray, path_voxel: queue.Queue):
         """
         config:
             start_pos: (3,) np.ndarray, start position
-            target_map: (map_size, map_size, map_size) np.ndarray, target_map
-            obstacle_map: (map_size, map_size, map_size) np.ndarray, obstacle_map
         Returns:
             path: (n, 3) np.ndarray, path
         """
         # make copies
-        raw_target_map = target_map.copy()
         _costmap = costmap.copy()
         # get stop criteria
         stop_criteria = self._get_stop_criteria()
@@ -53,7 +50,7 @@ class Slow_PathPlanner:
                 break
         raw_path = np.array(path)
         # postprocess path
-        self._postprocess_path(raw_path, raw_target_map, path_voxel, queue_lock)
+        self._postprocess_path(raw_path, path_voxel)
     
     def _get_stop_criteria(self):
         def no_nearby_equal_criteria(current_pos, costmap, stop_threshold):
@@ -72,8 +69,8 @@ class Slow_PathPlanner:
 
     def _calculate_nearby_voxel(self, current_pos):
         # create a grid of nearby voxels
-        half_size = int(2 * self.map_size / 100)
-        offsets = np.arange(-half_size, half_size + 1)
+        radius = self.config.nearby_radius
+        offsets = np.arange(-radius, radius + 1)
         # our heuristics-based dynamics model only supports planar pushing -> only xy path is considered
         offsets_grid = np.array(np.meshgrid(offsets, offsets, offsets)).T.reshape(-1, 3)
         # Remove the [0, 0, 0] offset, which corresponds to the current position
@@ -84,7 +81,7 @@ class Slow_PathPlanner:
         all_nearby_voxels = np.unique(all_nearby_voxels, axis=0)
         return all_nearby_voxels
     
-    def _postprocess_path(self, path, raw_target_map, path_voxel, queue_lock):
+    def _postprocess_path(self, path, path_voxel):
         """
         Apply various postprocessing steps to the path.
         """
@@ -111,16 +108,6 @@ class Slow_PathPlanner:
                 if skip_ratio > 1:
                     path_trimmed = path_trimmed[::skip_ratio]
         path = np.concatenate([path[0:1], path_trimmed, path[-1:]])
-        # force last position to be one of the target positions
-        last_waypoint = path[-1].round().clip(0, self.map_size - 1).astype(int)
-        if raw_target_map[last_waypoint[0], last_waypoint[1], last_waypoint[2]] == 0:
-            # find the closest target position
-            target_pos = np.argwhere(raw_target_map == 1)
-            closest_target_idx = np.argmin(np.linalg.norm(target_pos - last_waypoint, axis=1))
-            closest_target = target_pos[closest_target_idx]
-            path = np.append(path, [closest_target], axis=0)
         path = path.clip(0, self.map_size-1)
-        
-        with queue_lock:
-            for i in range(len(path)):
-                path_voxel.put(path[i])
+        path_voxel.put_all(path)
+

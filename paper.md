@@ -1,7 +1,3 @@
-好的，基于您提供的所有研究思路、技术细节和参考文献，我为您撰写了一份专业、严谨的小论文**Background**（背景）部分。该部分内容层层递进，从通用机器人操作的挑战出发，引出分层式与端到端方法的局限，最终自然地引出您的“快慢双系统”解决方案。
-
----
-
 ### **Background**
 
 The pursuit of general-purpose robotic manipulation aims to create systems capable of understanding and executing a wide range of tasks from high-level, natural language instructions in unstructured environments. A critical challenge in this domain is bridging the gap between abstract semantic reasoning and precise, real-time physical control. Recent advances have largely bifurcated into two dominant paradigms: hierarchical, modular approaches and end-to-end, vision-language-action (VLA) models.

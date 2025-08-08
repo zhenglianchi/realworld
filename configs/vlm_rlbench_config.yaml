@@ -12,8 +12,9 @@ planner:
   target_spacing: 1
   max_curvature: 3
   pushing_skip_per_k: 5
+  nearby_radius: 3
 
-  map_size: 100
+  map_size: 400
   
   fast_num_candidates: 15
   fast_alpha: 1.0
@@ -23,11 +24,11 @@ planner:
 
 visualizer:
   save_dir: ./visualizations
-  map_size: 100
+  map_size: 400
 
 lmp_config:
   env:
-    map_size: 100
+    map_size: 400
     max_plan_iter: 1
     visualize: True
   lmps:

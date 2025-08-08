@@ -17,6 +17,68 @@ from scipy.ndimage import distance_transform_edt
 from utils import get_clock_time, normalize_map
 
 
+class SharedQueue:
+    """
+    线程安全的共享队列，支持：
+    - 写入：传入一个 array 列表，将其元素按顺序放入队列
+    - 读取：实时读取当前队列内容（返回 list），无更新时返回旧队列
+    """
+    def __init__(self):
+        self._queue = queue.Queue()
+        self._data = []  # 实时可读的列表（保护副本）
+        self._lock = threading.Lock()  # 保证线程安全
+
+    def put_all(self, items):
+        """
+        写入函数：传入一个 array 列表，将其元素按顺序放入队列
+        并立即更新实时读取的副本
+        """
+        with self._lock:
+            # 清空旧队列（可选：若要完全替换）
+            while not self._queue.empty():
+                self._queue.get()
+
+            # 批量写入新元素
+            for item in items:
+                self._queue.put(item)
+
+            # 更新实时读取的副本
+            self._data = list(self._queue.queue)
+
+    def get_all(self):
+        """
+        实时读取函数：返回当前队列的副本（list）
+        如果队列未更新，返回上一次的内容；更新后自动返回新内容
+        """
+        with self._lock:
+            return self._data
+        
+    def remove_front(self):
+        """
+        外部调用：删除 _data 的第一个元素
+        用于表示“该路径点已到达，不再需要”
+        """
+        with self._lock:
+            if len(self._data) > 0:
+                self._data.pop(0)
+
+    def clear(self):
+        """清空队列"""
+        with self._lock:
+            while not self._queue.empty():
+                self._queue.get()
+            self._data.clear()
+
+    def empty(self):
+        """检查队列是否为空"""
+        with self._lock:
+            return self._queue.empty()
+
+    def size(self):
+        """获取队列大小"""
+        with self._lock:
+            return len(self._data)
+
 
 # creating some aliases for end effector and table in case LLMs refer to them differently (but rarely this happens)
 EE_ALIAS = ['ee', 'endeffector', 'end_effector', 'end effector', 'gripper', 'hand']
@@ -43,9 +105,8 @@ class LMP:
         self.exec_stop_event = threading.Event()
         self.init_map = threading.Event()
         self.map_lock = threading.Lock()
-        self.queue_lock = threading.Lock()
 
-        self.shared_queue = queue.Queue()
+        self.shared_queue = SharedQueue()
         self.executed_path_voxel = []
 
         self.movable_var = None
@@ -267,6 +328,9 @@ class LMP:
                 self.init_map.set()
                 update_count += 1
             
+            # 减少更新频率
+            time.sleep(0.3)
+            
             # 每2秒打印一次更新次数
             current_time = time.time()
             if current_time - last_log_time >= 2.0:
@@ -287,20 +351,12 @@ class LMP:
                 costmap = self.get_cost_map(lmp_env, affordance_map, avoidance_map)
 
                 # Optimize path and log
-                lmp_env.slow_planner.optimize(start_pos, affordance_map, costmap, self.shared_queue, self.queue_lock)
-
-                assert self.shared_queue.empty(), 'path_voxel is empty'
-
-                # Clear old queue and insert new trajectory
-                with self.queue_lock:
-                    while not self.shared_queue.empty():
-                        try:
-                            self.shared_queue.get_nowait()
-                        except Exception:
-                            break
+                lmp_env.slow_planner.optimize(start_pos, costmap, self.shared_queue)
+                assert not self.shared_queue.empty(), 'path_voxel is empty'
 
                 end_time = time.time()
                 print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated trajectory in {end_time - start_time:.3f}s{bcolors.ENDC}")
+                self.shared_queue.clear()
             else:
                 print("Gripper manipulation, no need to update traj")
                 break
@@ -312,16 +368,16 @@ class LMP:
                 # 这里后期可以优化
                 movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map()
 
-                while self.shared_queue.empty():
-                    time.sleep(0.1)
-
-                with self.queue_lock:
-                    queue_list = list(self.shared_queue.queue)
+                if self.shared_queue.empty():
+                    continue
+                
+                queue_list = self.shared_queue.get_all()
 
                 curr_xyz = movable_var['_position_world']
                 current_voxel_xyz = np.array(lmp_env._world_to_voxel(curr_xyz))
 
-                voxel_xyz = lmp_env.fast_planner.generate_fast_point_3d_vectorized(current_voxel_xyz, self.shared_queue, affordable_map, avoidance_map)
+                print(queue_list)
+                voxel_xyz = lmp_env.fast_planner.generate_fast_point_3d_vectorized(current_voxel_xyz, queue_list, affordable_map, avoidance_map)
                 world_xyz = lmp_env._voxel_to_world(voxel_xyz)
                 voxel_xyz = np.round(voxel_xyz).astype(int)
 
@@ -335,21 +391,19 @@ class LMP:
 
                 self.executed_path_voxel.append(voxel_xyz.copy())
 
+                # execute waypoint
+                lmp_env.ur5.execute(waypoint)
+
+                dist2target = np.linalg.norm(movable_var['_position_world'] - queue_list[-1])
+ 
+                print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint: (wp: {waypoint[0].round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {queue_list[-1].round(3)}, start: {current_voxel_xyz}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
+
                 # check if the movement is finished 5cm
-                if np.linalg.norm(movable_var['_position_world'] - queue_list[-1]) <= 0.3:
-                    print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={movable_var['_position_world']}, target={queue_list[-1]} (distance: {np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0]):.3f})){bcolors.ENDC}")
+                if np.linalg.norm(movable_var['_position_world'] - queue_list[-1]) <= 0.3 or len(queue_list) == 0:
+                    print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={movable_var['_position_world']}, target={queue_list[-1]} (distance: {np.linalg.norm(movable_var['_position_world'] - queue_list[-1]):.3f})){bcolors.ENDC}")
                     self.exec_stop_event.set()
                     self.update_stop_event.set()
                     break
-
-                # execute waypoint
-                lmp_env.ur5.execute(waypoint)
-                time.sleep(0.8)
-
-                dist2target = np.linalg.norm(movable_var['_position_world'] - queue_list[-1][0])
-                print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint: (wp: {waypoint[0].round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {queue_list[-1].round(3)}, start: {queue_list[0].round(3)}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
-
-
 
 
     def __call__(self, query, lmp_env, grasp_event, grasp_object, state_manager, voxel_visualizer, init_grasp_finished):
