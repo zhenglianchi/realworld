@@ -9,24 +9,25 @@ class Fast_PathPlanner:
         self.alpha = self.config.fast_alpha
         self.avoid_weight = self.config.avoid_weight  # 避障惩罚权重
 
-    def generate_fast_point_3d_vectorized(self, current_pos, slow_points, affordable_map, avoidance_map):
+    def generate_fast_point_3d_vectorized(self, current_pos, share_queue, affordable_map, avoidance_map):
         current_pos = np.array(current_pos, dtype=int)
-
+        slow_points = share_queue.get_all().copy()
         # 1. 找到最近的慢系统点作为引导方向
         distances = np.linalg.norm(slow_points - current_pos, axis=1)
         #print(f"distances: {distances}")
 
         nearest_idx = np.argmin(distances)
+
         slow_target = slow_points[nearest_idx].astype(int)  # 转为整数 voxel 坐标
 
         for i in range(nearest_idx+1):
-            slow_points.remove_front()
+            share_queue.remove_front()
 
         direction_vec = slow_target - current_pos
         direction_norm = np.linalg.norm(direction_vec)
         if direction_norm < 1e-6:
             print("返回当前位置")
-            return current_pos.copy()
+            return current_pos.copy(), slow_points.copy()
         unit_dir = direction_vec / direction_norm
 
         # 🔁 新增：动态半径 = 当前到目标的距离（限制在 [1, 5]）
@@ -108,4 +109,4 @@ class Fast_PathPlanner:
         best_idx = np.argmin(total_scores)
         best_point = valid_candidates[best_idx]
 
-        return best_point
+        return best_point, slow_points.copy()

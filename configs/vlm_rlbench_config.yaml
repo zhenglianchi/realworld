@@ -14,21 +14,21 @@ planner:
   pushing_skip_per_k: 5
   nearby_radius: 3
 
-  map_size: 400
+  map_size: 200
   
   fast_num_candidates: 15
   fast_alpha: 1.0
   fast_beta: 2.0
   avoid_weight: 1.0
-  fast_radius: 5
+  fast_radius: 3
 
 visualizer:
   save_dir: ./visualizations
-  map_size: 400
+  map_size: 200
 
 lmp_config:
   env:
-    map_size: 400
+    map_size: 200
     max_plan_iter: 1
     visualize: True
   lmps:

@@ -138,7 +138,8 @@ class LMP_interface():
     image = Image.fromarray(np.array(rgb))
     image_path = f"tmp/images/rgb.jpeg"
     image.save(image_path)
-    bbox = get_world_bboxs_list(image_path,instruction)
+    #bbox = get_world_bboxs_list(image_path,instruction)
+    bbox = [{'bbox': [274, 220, 312, 270], 'label': 'mouse'}]
     return rgb, bbox
   
   def get_grasp_pose(self,color,meter_depth,workspace_mask,init,grasp_ids):
