@@ -19,8 +19,8 @@ class VoxelSceneVisualizer:
         costmap,
         executed_path_voxel,
         filename="scene_path.html",
-        max_scene_points=500,
-        max_costmap_points=500,
+        max_scene_points=1000,
+        max_costmap_points=1000,
         show_cost_text=True
     ):
         """
@@ -102,7 +102,7 @@ class VoxelSceneVisualizer:
                     x=path[:, 0], y=path[:, 1], z=path[:, 2],
                     mode='lines+markers',
                     line=dict(color='red', width=10),
-                    marker=dict(size=8, color=path_costs, colorscale='Hot', colorbar=dict(title="Path Cost")),
+                    marker=dict(size=5, color=path_costs, colorscale='Hot', colorbar=dict(title="Path Cost")),
                     text=path_hover,
                     hoverinfo="text",
                     name='Executed Path (Fast)'

@@ -80,25 +80,11 @@ class StateManager:
             next_time = ((now // self.log_interval) + 1) * self.log_interval
             time.sleep(max(0, next_time - time.time()))
 
-    def _read_file(self) -> Optional[Dict[Any, Any]]:
-        """安全读取 JSON 文件"""
-        try:
-            with open(self.file_path, 'r') as f:
-                return json.load(f)
-        except (json.JSONDecodeError, PermissionError, OSError) as e:
-            print(f"[StateManager] Failed to parse {self.file_path}: {e}")
-            return None
-
     def write_state(self, data: Dict[Any, Any]) -> bool:
         """
         安全写入状态文件，并触发通知。
         """
         try:
-            temp_path = self.file_path + ".tmp"
-            with open(temp_path, 'w') as f:
-                json.dump(data, f, indent=2)
-            os.replace(temp_path, self.file_path)
-
             with self._condition:
                 self._state = data.copy()
                 self._mtime = time.time()

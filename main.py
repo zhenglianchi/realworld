@@ -17,7 +17,7 @@ from Costmapvisualizer3D import VoxelSceneVisualizer
 config_path = "configs/vlm_rlbench_config.yaml"
 config = get_config(config_path=config_path)
 
-state_manager = StateManager(config.json_path, poll_interval=0.02, log_interval=2)
+state_manager = StateManager(config.json_path, poll_interval=0.02, log_interval=5)
 state_manager.start_monitor()  # 启动自动监听
 
 voxel_visualizer = VoxelSceneVisualizer(
@@ -33,12 +33,11 @@ init_pose = np.array([
     -0.131
     ])
 ur5 = UR_BASE("192.168.111.10",fisrt_tcp=init_pose)
-time.sleep(20)
+time.sleep(6)
 
 voxposer_ui, lmp_env = setup_LMP(config,ur5)
 
-#instruction = input("请输入指令")
-instruction = "only grasp the mouse"
+instruction = "Grasp the mouse and place it on the tape."
 
 grasp_object = queue.Queue()
 grasp_event = threading.Event()
@@ -49,7 +48,6 @@ def update_state(instruction,finished_event,grasp_event,grasp_object,state_manag
     lmp_env.update_mask_entities(instruction,finished_event,grasp_event,grasp_object,state_manager,init_grasp_finished)
     shutil.rmtree("tmp/images")
     shutil.rmtree("tmp/masks")
-    os.remove(config["json_path"])
 
 def run_voxposer_ui(instruction,lmp_env,finished_event,grasp_event,grasp_object,state_manager,voxel_visualizer,init_grasp_finished):
     voxposer_ui(instruction,lmp_env,grasp_event,grasp_object,state_manager,voxel_visualizer,init_grasp_finished)
@@ -60,9 +58,6 @@ thread1 = Update_State_Thread(target=update_state, args=(instruction,finished_ev
 thread2 = Execute_Thread(target=run_voxposer_ui, args=(instruction,lmp_env,finished_event,grasp_event,grasp_object,state_manager,voxel_visualizer,init_grasp_finished))
 
 thread1.start()
-while not os.path.exists(config["json_path"]):
-    time.sleep(1)
-
 thread2.start()
 thread2.join()
 thread1.join()

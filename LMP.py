@@ -42,7 +42,11 @@ class SharedQueue:
         with self._lock:
             # 清空旧队列（可选：若要完全替换）
             while not self._queue.empty():
-                self._queue.get()
+                try:
+                    self._queue.get()
+                except queue.Empty:
+                    print("Queue is empty")
+                    break
 
             # 批量写入新元素
             for item in items:
@@ -72,7 +76,12 @@ class SharedQueue:
         """清空队列"""
         with self._lock:
             while not self._queue.empty():
-                self._queue.get()
+                try:
+                    self._queue.get()
+                except queue.Empty:
+                    print("Queue is empty")
+                    break
+
             self._data.clear()
 
     def empty(self):
@@ -208,7 +217,7 @@ class LMP:
             y = eval(affordable["y"])
             z = eval(affordable["z"])
             target_affordance = affordable["target_affordance"]
-            x,y,z = lmp_env._world_to_voxel(np.array([x,y,z]))
+            x,y,z = np.array([x,y,z]).astype(int)
             affordable_map[x,y,z] = target_affordance
         return affordable_map
     
@@ -270,7 +279,7 @@ class LMP:
     def init_grasp(self, action_state,grasp_event,grasp_object):
         affordable = action_state["affordable"]
         affordable_set = affordable["set"]
-        if affordable_set != "default" :
+        if affordable_set != "default":
             self.move = True
             move = affordable["move"]
             if move == "grasp":
@@ -391,11 +400,10 @@ class LMP:
                 
                     waypoint = (world_xyz, rotation, velocity, gripper)
 
-                    self.executed_path_voxel.append(voxel_xyz.copy())
-
                     # execute waypoint
                     lmp_env.ur5.execute(waypoint)
-                    time.sleep(0.5)
+                    self.executed_path_voxel.append(voxel_xyz.copy())
+                    time.sleep(0.35)
 
                     dist2target = np.linalg.norm(curr_xyz - lmp_env._voxel_to_world(queue_list[-1]))
     
@@ -413,7 +421,8 @@ class LMP:
 
     def __call__(self, query, lmp_env, grasp_event, grasp_object, state_manager, voxel_visualizer, init_grasp_finished):
         #planning = self.generate_planning(query)
-        planning = ['grasp the mouse']
+        #planning = ["move to the top of the tape"]
+        planning = ["grasp the mouse", "move to the top of the tape"]
         print(planning)
         planning_ = planning.copy()
         while len(planning) >= 0:
@@ -439,12 +448,12 @@ class LMP:
 
             self.init_grasp(action_state,grasp_event,grasp_object)
             
-            if self.move:
+            if grasp_event.is_set():
                 # 这里等待一个抓取位姿生成
                 init_grasp_finished.wait()
                 print("init grasp successful!")
 
-            time.sleep(5)
+            time.sleep(0.35)
             
             # 启动更新路径的线程
             map_thread = map_Thread(target=self.__thread_update_map, args=(lmp_env, action_state, state_manager))
@@ -473,15 +482,15 @@ class LMP:
             init_grasp_finished.clear()
             self.init_map.clear()
             grasp_event.clear()
-            grasp_object.get_nowait()
+            if not grasp_object.empty():
+                grasp_object.get_nowait()
             
             self.shared_queue.clear()
 
             if self.move:
                 print("正在生成可视化文件...")
-                with self.map_lock:
-                    movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map()
-                    costmap = self.get_cost_map(lmp_env, affordable_map, avoidance_map)
+                movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map()
+                costmap = self.get_cost_map(lmp_env, affordable_map, avoidance_map)
                 scenemap = lmp_env._get_scene_collision_voxel_map()
 
                 # 生成文件名

@@ -109,6 +109,5 @@ class Slow_PathPlanner:
                     path_trimmed = path_trimmed[::skip_ratio]
         path = np.concatenate([path[0:1], path_trimmed, path[-1:]])
         path = path.clip(0, self.map_size-1)
-        print(path)
         path_voxel.put_all(path)
 

@@ -53,9 +53,6 @@ class LMP_interface():
     # calculate size of each voxel (resolution)
     self._resolution = (self.ur5.workspace_bounds_max - self.ur5.workspace_bounds_min) / self._map_size
     print(f'Voxel resolution: {self._resolution}')
-  # ======================================================
-  # == functions exposed to LLMstate
-  # ======================================================
 
 
   def get_obs(self, obj_pc, label, grasp_pose):
@@ -71,7 +68,7 @@ class LMP_interface():
     obs_dict['_point_cloud_world'] = obj_pc  # in world frame
     
     if grasp_pose :
-      obs_dict['translation'] = grasp_pose['translation']  # in world frame
+      obs_dict['translation'] = self._world_to_voxel(grasp_pose['translation'])  # in world frame
       obs_dict['rotvec'] = grasp_pose['rotvec']  # in world frame
 
     object_obs = {"obs":Observation(obs_dict)}
@@ -138,8 +135,7 @@ class LMP_interface():
     image = Image.fromarray(np.array(rgb))
     image_path = f"tmp/images/rgb.jpeg"
     image.save(image_path)
-    #bbox = get_world_bboxs_list(image_path,instruction)
-    bbox = [{'bbox': [274, 220, 312, 270], 'label': 'mouse'}]
+    bbox = get_world_bboxs_list(image_path,instruction)
     return rgb, bbox
   
   def get_grasp_pose(self,color,meter_depth,workspace_mask,init,grasp_ids):
@@ -271,6 +267,7 @@ class LMP_interface():
         state['workspace'] = self.get_table_obs()
 
         state_manager.write_state(state)
+        #print(state)
 
         end_time = time.time()  # 记录结束时间
         print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated object state in {end_time - start_time:.3f}s{bcolors.ENDC}")
