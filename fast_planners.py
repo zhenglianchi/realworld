@@ -11,14 +11,29 @@ class Fast_PathPlanner:
 
     def generate_fast_point_3d_vectorized(self, current_pos, share_queue, affordable_map, avoidance_map):
         current_pos = np.array(current_pos, dtype=int)
-        slow_points = share_queue.get_all().copy()
-        # 1. 找到最近的慢系统点作为引导方向
+        slow_points = np.array(share_queue.get_all().copy())
+
+        # 1. 找到清除最近点后的最远的慢系统点作为引导方向
         distances = np.linalg.norm(slow_points - current_pos, axis=1)
+        nearest_idx = np.argmin(distances)  # 最近点
+        # 将新更新的前面的点删除
+        slow_points = slow_points[nearest_idx:]
+        distances = distances[nearest_idx:]
+
+        # 找最远的点
+        in_range_mask = distances <= self.radius
+        candidates_in_range = slow_points[in_range_mask]
+        distances_in_range = distances[in_range_mask]
         #print(f"distances: {distances}")
-
-        nearest_idx = np.argmin(distances)
-
-        slow_target = slow_points[nearest_idx].astype(int)  # 转为整数 voxel 坐标
+        if len(candidates_in_range) > 0:
+            nearest_idx = np.argmax(distances_in_range)  # 最远点
+            slow_target = candidates_in_range[nearest_idx].astype(int)
+            print(f"Using farthest in-range slow point: {slow_target}, distance: {distances_in_range[nearest_idx]:.2f}")
+        else:
+            # 回退策略：如果没有点在范围内，使用下一个点作为引导方向
+            nearest_idx = 0
+            slow_target = slow_points[nearest_idx].astype(int)
+            print(f"No slow point in radius {self.radius}, using the next point: {slow_target}")
 
         for i in range(nearest_idx+1):
             share_queue.remove_front()
@@ -26,7 +41,7 @@ class Fast_PathPlanner:
         direction_vec = slow_target - current_pos
         direction_norm = np.linalg.norm(direction_vec)
         if direction_norm < 1e-6:
-            print("返回当前位置")
+            print("Target reached or invalid direction. Returning current position.")
             return current_pos.copy(), slow_points.copy()
         unit_dir = direction_vec / direction_norm
 
@@ -98,12 +113,6 @@ class Fast_PathPlanner:
             self.alpha * afford_values +
             self.avoid_weight * avoid_values
         )
-
-        # ✅ 强制避障
-        danger_mask = avoid_values > 0.5
-        total_scores[danger_mask] += 100.0
-
-        #print(f"total_scores: {total_scores}")
 
         # 8. 选择最优
         best_idx = np.argmin(total_scores)

@@ -200,7 +200,7 @@ class LMP:
 
 
     def __get__affordable_map(self,action_state,lmp_env,object_state):
-        affordable_map = None
+        affordable_map = lmp_env._get_default_voxel_map('target')()
         affordable = action_state["affordable"]
         affordable_set = affordable["set"]
         if affordable_set != "default" :
@@ -246,7 +246,7 @@ class LMP:
         gripper = action_state["gripper"]
         gripper_set = gripper["set"]
         if gripper_set != "default" :
-            if "object" not in action_state["gripper"].keys():
+            if gripper_set == "gripper_map[:, :, :] = 1" :
                 gripper_map[:, :, :] = 1
                 return gripper_map
             gripper_var = action_state["gripper"]["object"]
@@ -264,7 +264,6 @@ class LMP:
     
     def __get__rotation_map(self,action_state,lmp_env,object_state):
         rotation_map = lmp_env._get_default_voxel_map('rotation')()
-
         return rotation_map
     
     def __get__velocity_map(self,action_state,lmp_env,object_state):
@@ -309,12 +308,10 @@ class LMP:
             global _map_size, _resolution
             _map_size = lmp_env._map_size
             _resolution = lmp_env._resolution
-            init_blocking = True
             update_count = 0
             last_log_time = time.time()
             while not self.update_stop_event.is_set():
-                object_state = state_manager.get_state(init_blocking, timeout=5.0)
-                init_blocking = False
+                object_state = state_manager.get_state(blocking = True, timeout = 100.0)
                 affordable_map = self.__get__affordable_map(action_state,lmp_env,object_state)
                 rotation_map = self.__get__rotation_map(action_state,lmp_env,object_state)
                 velocity_map = self.__get__velocity_map(action_state,lmp_env,object_state)
@@ -336,9 +333,7 @@ class LMP:
 
                     self.init_map.set()
                     update_count += 1
-                
-                # 减少更新频率
-                time.sleep(0.3)
+            
                 
                 # 每2秒打印一次更新次数
                 current_time = time.time()
@@ -371,6 +366,7 @@ class LMP:
 
                 else:
                     print("Gripper manipulation, no need to update traj")
+                    self.update_stop_event.set()
                     break
         except Exception as e:
             logging.error(f"Error in update_traj thread",exc_info=True)
@@ -383,11 +379,25 @@ class LMP:
                     # 这里后期可以优化
                     movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map()
 
-                    if self.shared_queue.size() == 0:
-                        continue
-
                     curr_xyz = lmp_env.ur5.get_tcp()[:3]  # 直接获取实时位置
                     current_voxel_xyz = np.array(lmp_env._world_to_voxel(curr_xyz))
+
+                    if self.shared_queue.size() == 0:
+                        if self.update_stop_event.is_set():
+                            rotation = lmp_env.ur5.get_tcp()[3:]
+                            rotation_map[current_voxel_xyz[0], current_voxel_xyz[1], current_voxel_xyz[2]] = rotation
+                            
+                            velocity = velocity_map[current_voxel_xyz[0], current_voxel_xyz[1], current_voxel_xyz[2]]
+                            gripper = gripper_map[current_voxel_xyz[0], current_voxel_xyz[1], current_voxel_xyz[2]]
+                        
+                            waypoint = (curr_xyz, rotation, velocity, gripper)
+                            # execute waypoint
+                            lmp_env.ur5.execute(waypoint,gripper)
+                            self.exec_stop_event.set()
+                            break
+                        else:
+                            continue
+
                     voxel_xyz,queue_list = lmp_env.fast_planner.generate_fast_point_3d_vectorized(current_voxel_xyz, self.shared_queue, affordable_map, avoidance_map)
                     world_xyz = lmp_env._voxel_to_world(voxel_xyz)
                     voxel_xyz = np.round(voxel_xyz).astype(int)
@@ -401,9 +411,9 @@ class LMP:
                     waypoint = (world_xyz, rotation, velocity, gripper)
 
                     # execute waypoint
-                    lmp_env.ur5.execute(waypoint)
+                    lmp_env.ur5.execute(waypoint,gripper)
                     self.executed_path_voxel.append(voxel_xyz.copy())
-                    time.sleep(0.35)
+                    time.sleep(0.5)
 
                     dist2target = np.linalg.norm(curr_xyz - lmp_env._voxel_to_world(queue_list[-1]))
     
@@ -420,13 +430,19 @@ class LMP:
 
 
     def __call__(self, query, lmp_env, grasp_event, grasp_object, state_manager, voxel_visualizer, init_grasp_finished):
-        #planning = self.generate_planning(query)
-        #planning = ["move to the top of the tape"]
-        planning = ["grasp the mouse", "move to the top of the tape"]
+        planning = self.generate_planning(query)
         print(planning)
         planning_ = planning.copy()
         while len(planning) >= 0:
+            if len(planning) == 0:
+                print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] finished all planning{bcolors.ENDC}")
+                break
+
             action = planning.pop(0)
+            if action == "reset to default pose":
+                lmp_env.ur5.reset_to_default_pose()
+                continue
+
             action_state = None
             filenames = os.listdir("cache")
             for filename in filenames:
@@ -452,8 +468,6 @@ class LMP:
                 # 这里等待一个抓取位姿生成
                 init_grasp_finished.wait()
                 print("init grasp successful!")
-
-            time.sleep(0.35)
             
             # 启动更新路径的线程
             map_thread = map_Thread(target=self.__thread_update_map, args=(lmp_env, action_state, state_manager))
@@ -510,12 +524,6 @@ class LMP:
 
                 # 清空
             self.executed_path_voxel.clear()
-
-            if len(planning) == 0:
-                print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] finished all planning{bcolors.ENDC}")
-                time.sleep(1)
-                lmp_env.ur5.reset_to_default_pose()
-                break
 
 
 

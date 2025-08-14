@@ -2,7 +2,7 @@ import rtde_control
 import rtde_receive
 from scipy.spatial.transform import Rotation as R
 import numpy as np
-import time
+from OmniPicker import  OmniPicker_Interface
 
 class UR_BASE(object):
     def __init__(self, HOST, fisrt_tcp=None):
@@ -15,6 +15,8 @@ class UR_BASE(object):
         if fisrt_tcp is not None:
             self.init_pose = fisrt_tcp
             self.moveL(fisrt_tcp,speed=0.05,acc=0.05)
+        self.gripper = OmniPicker_Interface()
+        #self.gripper.connect()
 
     def reset_to_default_pose(self):
         self.servoL(self.init_pose, time=2)
@@ -25,10 +27,6 @@ class UR_BASE(object):
         self.rtde_c.reconnect()
 
     def move_joint_path(self, path):
-        # speed = 0.9
-        # acc = 0.5
-        # blend = 0.02
-
         joints = [0, 0, 0, 0, 0, 0]
         for i in range(len(path)):
             for n in range(6):
@@ -52,7 +50,7 @@ class UR_BASE(object):
     def get_joint(self):
         return self.rtde_r.getActualQ()
 
-    def moveL(self, pose, asy=True, speed=0.02, acc=0.02):
+    def moveL(self, pose, asy=True, speed=0.05, acc=0.02):
         pose = pose.tolist()
         self.rtde_c.moveL(pose, speed, acc, asy)
 
@@ -66,7 +64,7 @@ class UR_BASE(object):
     def speedL(self, ee_speed, acc=0.25, control_period=0.02):
         self.rtde_c.speedL(ee_speed, acc, control_period)
 
-    def servoL(self, pose, speed=0.01, acc=0.02, time=0.35, lookahead_time=0.1, gain=300):
+    def servoL(self, pose, speed=0.01, acc=0.02, time=0.5, lookahead_time=0.1, gain=300):
         '''
         控制机器人末端执行器以线性方式伺服移动到目标位姿（工具空间中）。
         该方法适用于实时轨迹跟踪或动态目标更新的场景，如视觉伺服或远程操作。
@@ -104,9 +102,14 @@ class UR_BASE(object):
         pose = pose.tolist()
         self.rtde_c.servoL(pose, speed, acc, time, lookahead_time, gain)
 
-    def execute(self, waypoint):
+    def execute(self, waypoint, gripper):
         target_pose = np.concatenate((waypoint[0], waypoint[1]))
         self.servoL(target_pose)
+        print(gripper)
+        '''if gripper == 1:
+            self.gripper.gripper_close()
+        elif gripper == 0:
+            self.gripper.gripper_open()'''
 
     def ur_pose_to_matrix(self):
         """

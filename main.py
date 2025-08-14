@@ -37,7 +37,7 @@ time.sleep(6)
 
 voxposer_ui, lmp_env = setup_LMP(config,ur5)
 
-instruction = "Grasp the mouse and place it on the tape."
+instruction = "Grasp the tape and place it on the mouse."
 
 grasp_object = queue.Queue()
 grasp_event = threading.Event()

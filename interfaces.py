@@ -162,7 +162,7 @@ class LMP_interface():
       rotvec = rotation_matrix.as_rotvec()
       translation = T_grasp2world[:3, 3]
       # 补偿gripper高度
-      translation[2] = translation[2] + 0.2
+      translation[2] = translation[2]+ 0.1
 
       grasp_pose = {
         "translation": translation,
@@ -350,7 +350,6 @@ class LMP_interface():
         voxel_map = np.ones((self._map_size, self._map_size, self._map_size))
       elif type == 'gripper':
         # 这里gripper:1->0为张开;0->1为闭合
-        #voxel_map = np.ones((self._map_size, self._map_size, self._map_size)) * self._env.get_last_gripper_action()
         voxel_map = np.ones((self._map_size, self._map_size, self._map_size))
       elif type == 'rotation':
         voxel_map = np.zeros((self._map_size, self._map_size, self._map_size, 3))
