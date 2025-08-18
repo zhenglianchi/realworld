@@ -20,7 +20,7 @@ planner:
   fast_alpha: 1.0
   fast_beta: 2.0
   avoid_weight: 5.0
-  fast_radius: 10
+  fast_radius: 5
 
 visualizer:
   save_dir: ./visualizations

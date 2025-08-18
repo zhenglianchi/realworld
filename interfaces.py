@@ -55,7 +55,7 @@ class LMP_interface():
     print(f'Voxel resolution: {self._resolution}')
 
 
-  def get_obs(self, obj_pc, label, grasp_pose):
+  def get_obs(self, obj_pc, label):
     obs_dict = dict()
     voxel_map = self._points_to_voxel_map(obj_pc)
     aabb_min = self._world_to_voxel(np.min(obj_pc, axis=0))
@@ -66,10 +66,6 @@ class LMP_interface():
     obs_dict['aabb'] = np.array([aabb_min, aabb_max])  # in voxel frame
     obs_dict['_position_world'] = np.mean(obj_pc, axis=0)  # in world frame
     obs_dict['_point_cloud_world'] = obj_pc  # in world frame
-    
-    if grasp_pose :
-      obs_dict['translation'] = self._world_to_voxel(grasp_pose['translation'])  # in world frame
-      obs_dict['rotvec'] = grasp_pose['rotvec']  # in world frame
 
     object_obs = {"obs":Observation(obs_dict)}
     return object_obs
@@ -137,42 +133,9 @@ class LMP_interface():
     image.save(image_path)
     bbox = get_world_bboxs_list(image_path,instruction)
     return rgb, bbox
-  
-  def get_grasp_pose(self,color,meter_depth,workspace_mask,init,grasp_ids):
-      if init:
-        grasp_ids = [0]
-        target_gg, grasp_ids = infer_grasps(color, meter_depth, workspace_mask, self.camera, init, grasp_ids)
-        init = False
-      else:
-        target_gg, grasp_ids = infer_grasps(color, meter_depth, workspace_mask, self.camera, init, grasp_ids)
-
-      grasp_pose = None
-      gg_final = target_gg[0]
-      T_gg_grasp = np.eye(4)
-      T_gg_grasp[:3, :3] = gg_final.rotation_matrix
-      T_gg_grasp[:3, 3] = gg_final.translation
-
-      T_grasp2cam = np.eye(4)
-      T_gg_cam = T_grasp2cam @ T_gg_grasp
-      
-      T_cam2world = self.camera.get_extrinsic_matrix()
-      T_grasp2world = T_cam2world @ T_gg_cam
-      
-      rotation_matrix = R.from_matrix(T_grasp2world[:3, :3])
-      rotvec = rotation_matrix.as_rotvec()
-      translation = T_grasp2world[:3, 3]
-      # 补偿gripper高度
-      translation[2] = translation[2]+ 0.1
-
-      grasp_pose = {
-        "translation": translation,
-        "rotvec": rotvec
-      }
-
-      return grasp_pose, init, grasp_ids
 
 
-  def update_mask_entities(self,instruction,finished_event,grasp_event,grasp_object,state_manager,init_grasp_finished):
+  def update_mask_entities(self,instruction,finished_event,state_manager):
       if not os.path.exists("tmp/images"):
           os.makedirs("tmp/images")
       if not os.path.exists("tmp/masks"):
@@ -180,20 +143,17 @@ class LMP_interface():
       
       state = {}
       plt.figure(figsize=(20, 20))
+      print("正在使用Qwen-VL生成目标框...........")
       frame, bbox_entities = self.qwen_vl_box(instruction)
       print(bbox_entities)
-
+      print("正在处理yoloe视觉提示...........")
       visuals,objects,label2id,id2label = process_visual_prompt(bbox_entities)
       set_visual_prompt(frame, visuals, objects)
+      print("视觉预处理完成")
       num = 0
-      init = True
-      grasp_ids = []
+      
       while not finished_event.is_set():
         start_time = time.time()
-        label_index = {}
-        for item in objects:
-          if item not in label_index.keys():
-            label_index[item] = 1
 
         frame, meter_depth = self.camera.get_aligned_images()
         # 这里创建的点云，原点为相机坐标系中心
@@ -202,14 +162,12 @@ class LMP_interface():
         plt.clf()
         plt.imshow(frame)
         boxes, masks_ = predict_mask(frame)
-        workspace_mask = np.zeros_like(meter_depth).astype(bool)
-        for (box_ent, mask) in zip(boxes, masks_):
-            id = int(box_ent[5])
+
+        for (box_entity, mask) in zip(boxes, masks_):
+            id = int(box_entity[5])
+            box = box_entity[:4]
             label = id2label[id]
             points, masks = [], []
-            box = box_ent[:4]
-            
-            workspace_mask = workspace_mask | mask.astype(bool)
             
             points.append(pcd_.reshape(-1, 3))
             h, w = mask.shape[-2:]
@@ -237,21 +195,7 @@ class LMP_interface():
 
             grasp_pose = None
             # 如果有抓取事件，则进行抓取
-            test1 = time.time()
-            print("yoloe time: ",test1-start_time)
-            if grasp_event.is_set():
-              grasp_name = grasp_object.get()
-              grasp_object.put(grasp_name)
-              if grasp_name == label:
-                print(f"Grasping {label}!")
-                color = np.array(frame.copy(), dtype=np.float32) / 255.0
-                meter_depth = np.array(meter_depth.copy(), dtype=np.float32)
-                workspace_mask = workspace_mask.astype(bool)
-                grasp_pose, init, grasp_ids = self.get_grasp_pose(color, meter_depth, workspace_mask, init, grasp_ids)
-                init_grasp_finished.set()
-                test2 = time.time()
-                print("anygrasp time: ",test2-test1)
-                
+            end_time = time.time()
             obs = self.get_obs(obj_points, label, grasp_pose)
             state[label] = obs
 
@@ -267,13 +211,13 @@ class LMP_interface():
         state['workspace'] = self.get_table_obs()
 
         state_manager.write_state(state)
-        #print(state)
 
         end_time = time.time()  # 记录结束时间
         print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated object state in {end_time - start_time:.3f}s{bcolors.ENDC}")
         plt.axis('off')
         plt.draw()
-        plt.savefig(f"tmp/masks/mask_{num}.jpeg", bbox_inches='tight', pad_inches=0)
+        if num % 10 == 0:
+          plt.savefig(f"tmp/masks/mask_{num/10}.jpeg", bbox_inches='tight', pad_inches=0)
         num+=1
   
 

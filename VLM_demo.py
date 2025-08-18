@@ -149,10 +149,43 @@ def get_world_bboxs_list(image_path,instruction):
 
     base64_image = encode_image(image_path)
 
+    prompt = f'''
+    You are analyzing a robotic arm operation scene. Your task is to detect **all components** of objects associated with the instruction: "{instruction}".
+
+    For each detected element, output a dictionary with:
+    - `"bbox"`: the 2D bounding box in format `[x1, y1, x2, y2]` (top-left and bottom-right),
+    - `"label"`: the **English name** of the part or object.
+
+    ### Detection Rules:
+    1. **Decompose composite objects into their visible parts**. For example:
+    - *Cup* → "cup body", "cup handle"
+    - *Cabinet* → "cabinet body", "cabinet door", "cabinet handle"
+    - *Drawer* → "drawer front", "drawer body"
+    - *Mug with handle* → "mug body", "handle"
+    2. **Do not decompose inherently single-piece objects** — if an object has no meaningful detachable or distinguishable subparts, return it as a whole. Examples include:
+    - "mouse", "pen", "block", "ball", "key", "usb drive"
+    3. Only include **visually present and distinguishable** parts.
+    4. Never return the full object if it has detectable components — **only return its parts**.
+    5. If a part is occluded but still partially visible, include it with its visible bounding box.
+    6. Output **only a list of dictionaries**, no additional text or explanation.
+
+    ### Output Format:
+    ```json
+    [
+    {{"bbox": [x1, y1, x2, y2], "label": "cup handle"}},
+    {{"bbox": [x1, y1, x2, y2], "label": "cup body"}},
+    {{"bbox": [x1, y1, x2, y2], "label": "mouse"}},
+    {{"bbox": [x1, y1, x2, y2], "label": "cabinet door"}}
+    ]
+    ```
+    Ensure completeness and precision at the **part level**, respecting whether an object should be split or kept whole.
+
+    '''
+
     completion = client.chat.completions.create(
         model="qwen2.5-vl-72b-instruct", 
         messages=[{"role": "user","content": [
-                {"type": "text","text": f"This is a robotic arm operation scene, you need to detect all objects associated with the '{instruction}' in the image and return their locations in the form of coordinates, don't give up any information about the details. The format of output should be like" +"{“bbox”: [x1, y1, x2, y2], “label”: the name of this object in English.} not {“bbox_2d”: [x1, y1, x2, y2], “label”: the name of this object in Chinese}. like 'grasp the rubbish', you need to detect the rubbish and obstacles in the way;like 'open the drawer', you need to detect the drawer handle and obstacles in the way;"},
+                {"type": "text","text": prompt},
                 {"type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}, 
                 }

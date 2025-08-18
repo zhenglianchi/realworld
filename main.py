@@ -5,10 +5,7 @@ from Threads import Update_State_Thread, Execute_Thread
 from StateManager import StateManager
 import threading
 import time
-import os
-import time
 import queue
-import shutil 
 import numpy as np
 from Costmapvisualizer3D import VoxelSceneVisualizer
 
@@ -39,23 +36,18 @@ voxposer_ui, lmp_env = setup_LMP(config,ur5)
 
 instruction = "Grasp the tape and place it on the mouse."
 
-grasp_object = queue.Queue()
-grasp_event = threading.Event()
-init_grasp_finished = threading.Event()
 finished_event = threading.Event()
 
-def update_state(instruction,finished_event,grasp_event,grasp_object,state_manager,init_grasp_finished):
-    lmp_env.update_mask_entities(instruction,finished_event,grasp_event,grasp_object,state_manager,init_grasp_finished)
-    shutil.rmtree("tmp/images")
-    shutil.rmtree("tmp/masks")
+def update_state(instruction,finished_event,state_manager,):
+    lmp_env.update_mask_entities(instruction,finished_event,state_manager,)
 
-def run_voxposer_ui(instruction,lmp_env,finished_event,grasp_event,grasp_object,state_manager,voxel_visualizer,init_grasp_finished):
-    voxposer_ui(instruction,lmp_env,grasp_event,grasp_object,state_manager,voxel_visualizer,init_grasp_finished)
+def run_voxposer_ui(instruction,lmp_env,finished_event,state_manager,voxel_visualizer,):
+    voxposer_ui(instruction,lmp_env,state_manager,voxel_visualizer,)
     finished_event.set()
 
 
-thread1 = Update_State_Thread(target=update_state, args=(instruction,finished_event,grasp_event,grasp_object,state_manager,init_grasp_finished))
-thread2 = Execute_Thread(target=run_voxposer_ui, args=(instruction,lmp_env,finished_event,grasp_event,grasp_object,state_manager,voxel_visualizer,init_grasp_finished))
+thread1 = Update_State_Thread(target=update_state, args=(instruction,finished_event,state_manager,))
+thread2 = Execute_Thread(target=run_voxposer_ui, args=(instruction,lmp_env,finished_event,state_manager,voxel_visualizer,))
 
 thread1.start()
 thread2.start()
@@ -63,6 +55,5 @@ thread2.join()
 thread1.join()
 state_manager.stop_monitor()
 finished_event.clear()
-grasp_event.clear()
 
 

@@ -5,7 +5,7 @@ import time
 from typing import Dict, Any, Optional
 
 class StateManager:
-    def __init__(self, file_path: str, poll_interval: float = 0.02, log_interval: float = 2.0):
+    def __init__(self, file_path: str, poll_interval: float = 0.01, log_interval: float = 4.0):
         self.file_path = file_path
         self.poll_interval = poll_interval
         self.log_interval = log_interval  # 日志打印间隔

@@ -15,13 +15,6 @@ import time
 from scipy.ndimage import gaussian_filter
 from scipy.ndimage import distance_transform_edt
 from utils import get_clock_time, normalize_map
-import logging
-
-# 配置日志格式，包含文件名和行号
-logging.basicConfig(
-    level=logging.ERROR,
-    format='%(asctime)s [%(threadName)s] %(filename)s:%(lineno)d - %(levelname)s - %(message)s'
-)
 
 class SharedQueue:
     """
@@ -118,11 +111,11 @@ class LMP:
 
         self.update_stop_event = threading.Event()
         self.exec_stop_event = threading.Event()
-        self.init_map = threading.Event()
         self.map_lock = threading.Lock()
 
         self.shared_queue = SharedQueue()
         self.executed_path_voxel = []
+        self.init_condition = threading.Condition()
 
         self.movable_var = None
         self.affordable_map = None
@@ -204,21 +197,18 @@ class LMP:
         affordable = action_state["affordable"]
         affordable_set = affordable["set"]
         if affordable_set != "default" :
-            move_mode = affordable["move"]
             affordable_map = lmp_env._get_default_voxel_map('target')()
             affordable_var = affordable["object"]
             object = object_state[affordable_var]["obs"]
-            if move_mode == "move":
-                center_x, center_y, center_z = eval(affordable["center_x, center_y, center_z"])
-                (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(affordable["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
-            if move_mode == "grasp":
-                translation = eval(affordable["translation"])
+            center_x, center_y, center_z = eval(affordable["center_x, center_y, center_z"])
+            (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(affordable["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
             x = eval(affordable["x"])
             y = eval(affordable["y"])
             z = eval(affordable["z"])
             target_affordance = affordable["target_affordance"]
             x,y,z = np.array([x,y,z]).astype(int)
             affordable_map[x,y,z] = target_affordance
+            self.move = True
         return affordable_map
     
     def __get__avoidance_map(self,action_state,lmp_env,object_state):
@@ -275,19 +265,6 @@ class LMP:
             velocity_map[:] = target_velocity
         return velocity_map
 
-    def init_grasp(self, action_state,grasp_event,grasp_object):
-        affordable = action_state["affordable"]
-        affordable_set = affordable["set"]
-        if affordable_set != "default":
-            self.move = True
-            move = affordable["move"]
-            if move == "grasp":
-                grasp_event.set()
-                object_name = affordable["object"]
-                print("抓取物体",object_name)
-                grasp_object.put(object_name)
-        else:
-            self.move = False
 
     def get_map(self):
         with self.map_lock:
@@ -304,132 +281,121 @@ class LMP:
 
 
     def __thread_update_map(self, lmp_env, action_state, state_manager):
-        try:
-            global _map_size, _resolution
-            _map_size = lmp_env._map_size
-            _resolution = lmp_env._resolution
-            update_count = 0
-            last_log_time = time.time()
-            while not self.update_stop_event.is_set():
-                object_state = state_manager.get_state(blocking = True, timeout = 100.0)
-                affordable_map = self.__get__affordable_map(action_state,lmp_env,object_state)
-                rotation_map = self.__get__rotation_map(action_state,lmp_env,object_state)
-                velocity_map = self.__get__velocity_map(action_state,lmp_env,object_state)
-                gripper_map = self.__get__gripper_map(action_state,lmp_env,object_state)
-                avoidance_map = self.__get__avoidance_map(action_state,lmp_env,object_state)
+        global _map_size, _resolution
+        _map_size = lmp_env._map_size
+        _resolution = lmp_env._resolution
+        update_count = 0
+        last_log_time = time.time()
+        while not self.update_stop_event.is_set():
+            object_state = state_manager.get_state(blocking = True, timeout = 30.0)
+            affordable_map = self.__get__affordable_map(action_state,lmp_env,object_state)
+            rotation_map = self.__get__rotation_map(action_state,lmp_env,object_state)
+            velocity_map = self.__get__velocity_map(action_state,lmp_env,object_state)
+            gripper_map = self.__get__gripper_map(action_state,lmp_env,object_state)
+            avoidance_map = self.__get__avoidance_map(action_state,lmp_env,object_state)
 
-                affordable_map = distance_transform_edt(1 - affordable_map)
-                affordable_map = normalize_map(affordable_map)
+            affordable_map = distance_transform_edt(1 - affordable_map)
+            affordable_map = normalize_map(affordable_map)
 
-                movable = action_state["movable"]
-                movable_var = object_state[movable]["obs"]
-                with self.map_lock:
-                    self.movable_var = movable_var
-                    self.affordable_map = affordable_map
-                    self.avoidance_map = avoidance_map
-                    self.rotation_map = rotation_map
-                    self.velocity_map = velocity_map
-                    self.gripper_map = gripper_map
-
-                    self.init_map.set()
-                    update_count += 1
-            
-                
-                # 每2秒打印一次更新次数
-                current_time = time.time()
-                if current_time - last_log_time >= 2.0:
-                    fps = update_count / (current_time - last_log_time)
-                    print(f"{bcolors.OKGREEN}[interfaces.py | {get_clock_time()}] Map update rate: {update_count} updates in {current_time - last_log_time:.2f}s ({fps:.1f} Hz){bcolors.ENDC}")
-                    update_count = 0
-                    last_log_time = current_time
-        except Exception as e:
-            logging.error(f"Error in update_map thread",exc_info=True)
+            movable = action_state["movable"]
+            movable_var = object_state[movable]["obs"]
+            with self.map_lock:
+                self.movable_var = movable_var
+                self.affordable_map = affordable_map
+                self.avoidance_map = avoidance_map
+                self.rotation_map = rotation_map
+                self.velocity_map = velocity_map
+                self.gripper_map = gripper_map
+                update_count += 1
+        
+            self.init_condition.notify()
+            # 每2秒打印一次更新次数
+            current_time = time.time()
+            if current_time - last_log_time >= 2.0:
+                fps = update_count / (current_time - last_log_time)
+                print(f"{bcolors.OKGREEN}[interfaces.py | {get_clock_time()}] Map update rate: {update_count} updates in {current_time - last_log_time:.2f}s ({fps:.1f} Hz){bcolors.ENDC}")
+                update_count = 0
+                last_log_time = current_time
 
 
             
     def __thread_update_traj(self, lmp_env):
-        try:
-            while not self.update_stop_event.is_set():
-                start_time = time.time()
-                movable_var, affordance_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map()
-                if self.move:
-                    start_pos = lmp_env.get_ee_pos().copy()  # 直接获取实时位置
-                    
-                    costmap = self.get_cost_map(lmp_env, affordance_map, avoidance_map)
+        while not self.update_stop_event.is_set():
+            if not self.move:
+                print("Gripper manipulation, no need to update traj")
+                self.update_stop_event.set()
+                break
 
-                    # Optimize path and log
-                    lmp_env.slow_planner.optimize(start_pos, costmap, self.shared_queue)
-                    assert not self.shared_queue.empty(), 'path_voxel is empty'
+            start_time = time.time()
 
-                    end_time = time.time()
-                    print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated trajectory in {end_time - start_time:.3f}s{bcolors.ENDC}")
+            movable_var, affordance_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map()
 
-                else:
-                    print("Gripper manipulation, no need to update traj")
-                    self.update_stop_event.set()
-                    break
-        except Exception as e:
-            logging.error(f"Error in update_traj thread",exc_info=True)
+            start_pos = lmp_env.get_ee_pos().copy()  # 直接获取实时位置
+            
+            costmap = self.get_cost_map(lmp_env, affordance_map, avoidance_map)
+
+            # Optimize path and log
+            lmp_env.slow_planner.optimize(start_pos, costmap, self.shared_queue)
+            assert not self.shared_queue.empty(), 'path_voxel is empty'
+
+            end_time = time.time()
+            print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated trajectory in {end_time - start_time:.3f}s{bcolors.ENDC}")
+
 
 
     def __thread_execute_traj(self, lmp_env):
-        try:
-            if self.move:
-                while not self.exec_stop_event.is_set():
-                    # 这里后期可以优化
-                    movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map()
+        while not self.exec_stop_event.is_set():
+            movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map()
 
-                    curr_xyz = lmp_env.ur5.get_tcp()[:3]  # 直接获取实时位置
-                    current_voxel_xyz = np.array(lmp_env._world_to_voxel(curr_xyz))
+            curr_xyz = lmp_env.ur5.get_tcp()[:3]  # 直接获取实时位置
+            current_voxel_xyz = np.array(lmp_env._world_to_voxel(curr_xyz))
 
-                    if self.shared_queue.size() == 0:
-                        if self.update_stop_event.is_set():
-                            rotation = lmp_env.ur5.get_tcp()[3:]
-                            rotation_map[current_voxel_xyz[0], current_voxel_xyz[1], current_voxel_xyz[2]] = rotation
-                            
-                            velocity = velocity_map[current_voxel_xyz[0], current_voxel_xyz[1], current_voxel_xyz[2]]
-                            gripper = gripper_map[current_voxel_xyz[0], current_voxel_xyz[1], current_voxel_xyz[2]]
-                        
-                            waypoint = (curr_xyz, rotation, velocity, gripper)
-                            # execute waypoint
-                            lmp_env.ur5.execute(waypoint,gripper)
-                            self.exec_stop_event.set()
-                            break
-                        else:
-                            continue
-
-                    voxel_xyz,queue_list = lmp_env.fast_planner.generate_fast_point_3d_vectorized(current_voxel_xyz, self.shared_queue, affordable_map, avoidance_map)
-                    world_xyz = lmp_env._voxel_to_world(voxel_xyz)
-                    voxel_xyz = np.round(voxel_xyz).astype(int)
-
+            if self.shared_queue.size() == 0:
+                if self.update_stop_event.is_set():
                     rotation = lmp_env.ur5.get_tcp()[3:]
-                    rotation_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]] = rotation
+                    rotation_map[current_voxel_xyz[0], current_voxel_xyz[1], current_voxel_xyz[2]] = rotation
                     
-                    velocity = velocity_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
-                    gripper = gripper_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
+                    velocity = velocity_map[current_voxel_xyz[0], current_voxel_xyz[1], current_voxel_xyz[2]]
+                    gripper = gripper_map[current_voxel_xyz[0], current_voxel_xyz[1], current_voxel_xyz[2]]
                 
-                    waypoint = (world_xyz, rotation, velocity, gripper)
-
+                    waypoint = (curr_xyz, rotation, velocity, gripper)
                     # execute waypoint
                     lmp_env.ur5.execute(waypoint,gripper)
-                    self.executed_path_voxel.append(voxel_xyz.copy())
-                    time.sleep(0.5)
+                    self.exec_stop_event.set()
+                    break
+                else:
+                    continue
 
-                    dist2target = np.linalg.norm(curr_xyz - lmp_env._voxel_to_world(queue_list[-1]))
-    
-                    print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint: (wp: {waypoint[0].round(3)}, voxel: {voxel_xyz.round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {queue_list[-1].round(3)}, start: {current_voxel_xyz}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
+            voxel_xyz,queue_list = lmp_env.fast_planner.generate_fast_point_3d_vectorized(current_voxel_xyz, self.shared_queue, affordable_map, avoidance_map)
+            world_xyz = lmp_env._voxel_to_world(voxel_xyz)
+            voxel_xyz = np.round(voxel_xyz).astype(int)
 
-                    # check if the movement is finished 5cm
-                    if dist2target <= 0.05 or self.shared_queue.size() == 0:
-                        print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={curr_xyz}, target={queue_list[-1]} (distance: {dist2target:.3f})){bcolors.ENDC}")
-                        self.exec_stop_event.set()
-                        self.update_stop_event.set()
-                        break
-        except Exception as e:
-            logging.error(f"Error in execute_traj thread",exc_info=True)
+            rotation = lmp_env.ur5.get_tcp()[3:]
+            rotation_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]] = rotation
+            
+            velocity = velocity_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
+            gripper = gripper_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
+        
+            waypoint = (world_xyz, rotation, velocity, gripper)
+
+            # execute waypoint
+            lmp_env.ur5.execute(waypoint,gripper)
+            self.executed_path_voxel.append(voxel_xyz.copy())
+            time.sleep(0.5)
+
+            dist2target = np.linalg.norm(curr_xyz - lmp_env._voxel_to_world(queue_list[-1]))
+
+            print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint: (wp: {waypoint[0].round(3)}, voxel: {voxel_xyz.round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {queue_list[-1].round(3)}, start: {current_voxel_xyz}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
+
+            # check if the movement is finished 5cm
+            if dist2target <= 0.05 or self.shared_queue.size() == 0:
+                print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={curr_xyz}, target={queue_list[-1]} (distance: {dist2target:.3f})){bcolors.ENDC}")
+                self.exec_stop_event.set()
+                self.update_stop_event.set()
+                break
 
 
-    def __call__(self, query, lmp_env, grasp_event, grasp_object, state_manager, voxel_visualizer, init_grasp_finished):
+    def __call__(self, query, lmp_env, state_manager, voxel_visualizer):
         planning = self.generate_planning(query)
         print(planning)
         planning_ = planning.copy()
@@ -462,13 +428,6 @@ class LMP:
 
             print(action_state)
 
-            self.init_grasp(action_state,grasp_event,grasp_object)
-            
-            if grasp_event.is_set():
-                # 这里等待一个抓取位姿生成
-                init_grasp_finished.wait()
-                print("init grasp successful!")
-            
             # 启动更新路径的线程
             map_thread = map_Thread(target=self.__thread_update_map, args=(lmp_env, action_state, state_manager))
             map_thread.daemon = True  # 设置为守护线程，随主线程退出
@@ -482,8 +441,7 @@ class LMP:
             execute_thread.daemon = True  # 设置为守护线程，随主线程退出
             
             map_thread.start()
-            self.init_map.wait()
-
+            self.init_condition.wait()
             traj_thread.start()
             execute_thread.start()
 
@@ -493,11 +451,6 @@ class LMP:
 
             self.update_stop_event.clear()
             self.exec_stop_event.clear()
-            init_grasp_finished.clear()
-            self.init_map.clear()
-            grasp_event.clear()
-            if not grasp_object.empty():
-                grasp_object.get_nowait()
             
             self.shared_queue.clear()
 

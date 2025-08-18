@@ -1,5 +1,11 @@
 import threading
 import traceback
+import logging
+# 配置日志格式，包含文件名和行号
+logging.basicConfig(
+    level=logging.ERROR,
+    format='%(asctime)s [%(threadName)s] %(filename)s:%(lineno)d - %(levelname)s - %(message)s'
+)
 
 class Update_State_Thread(threading.Thread):
     def __init__(self, *args, **kwargs):
@@ -11,7 +17,7 @@ class Update_State_Thread(threading.Thread):
             super().run()
         except Exception as e:
             self.exc = e
-            traceback.print_exc()  # 打印完整的堆栈信息
+            logging.error(f"Error in Update_State_Thread thread",exc_info=True)
         else:
             self.exc = None
 
@@ -30,7 +36,7 @@ class Execute_Thread(threading.Thread):
             super().run()
         except Exception as e:
             self.exc = e
-            traceback.print_exc()  # 打印完整的堆栈信息
+            logging.error(f"Error in Execute_Thread thread",exc_info=True)
         else:
             self.exc = None
 
@@ -49,7 +55,7 @@ class Low_Execute_Thread(threading.Thread):
             super().run()
         except Exception as e:
             self.exc = e
-            traceback.print_exc()  # 打印完整的堆栈信息
+            logging.error(f"Error in Low_Execute_Thread thread",exc_info=True)
         else:
             self.exc = None
 
@@ -68,7 +74,7 @@ class traj_Thread(threading.Thread):
             super().run()
         except Exception as e:
             self.exc = e
-            traceback.print_exc()  # 打印完整的堆栈信息
+            logging.error(f"Error in traj_Thread thread",exc_info=True)
         else:
             self.exc = None
 
@@ -87,7 +93,7 @@ class map_Thread(threading.Thread):
             super().run()
         except Exception as e:
             self.exc = e
-            traceback.print_exc()  # 打印完整的堆栈信息
+            logging.error(f"Error in map_Thread thread",exc_info=True)
         else:
             self.exc = None
 
