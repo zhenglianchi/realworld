@@ -195,7 +195,7 @@ class LMP_interface():
           if item not in label_index.keys():
             label_index[item] = 1
 
-        color, meter_depth = self.camera.get_aligned_images()
+        frame, meter_depth = self.camera.get_aligned_images()
         # 这里创建的点云，原点为相机坐标系中心
         pcd_ = self.camera.create_point_cloud_from_depth_image(meter_depth)
 
