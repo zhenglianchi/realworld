@@ -57,7 +57,7 @@ Examples:
         "x": "center_x",
         "y": "center_y",
         "z": "center_z",
-        "radius_cm": 0.5,
+        "radius_cm": 2,
         "value": 0,
         "set": "set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)"
     },
@@ -166,7 +166,7 @@ Examples:
         "x": "center_x",
         "y": "center_y",
         "z": "center_z",
-        "radius_cm": 0.5,
+        "radius_cm": 2,
         "value": 0,
         "set": "set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)"
     },
@@ -283,7 +283,7 @@ Examples:
         "object": "drawer handle",
         "center_x, center_y, center_z": "object['position']",
         "x": "center_x",
-        "y": "center_y",
+        "y": "center_y + cm2index(-5, 'y')",
         "z": "center_z",
         "target_affordance": 1,
         "set": "affordance_map[x, y, z] = 1"
@@ -298,7 +298,7 @@ Examples:
         "x": "center_x",
         "y": "center_y",
         "z": "center_z",
-        "radius_cm": 0.5,
+        "radius_cm": 2,
         "value": 0,
         "set": "set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)"
     },
@@ -375,7 +375,7 @@ Examples:
         "x": "center_x",
         "y": "center_y",
         "z": "center_z",
-        "radius_cm": 0.5,
+        "radius_cm": 2,
         "value": 0,
         "set": "set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)"
     },

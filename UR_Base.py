@@ -14,7 +14,7 @@ class UR_BASE(object):
         self.workspace_bounds_max = np.array([1.77499999, 1.65500004, 1.75199986])
         if fisrt_tcp is not None:
             self.init_pose = fisrt_tcp
-            self.moveL(fisrt_tcp,speed=0.05,acc=0.05)
+            self.moveL(fisrt_tcp,speed=0.1,acc=0.05)
         self.gripper = OmniPicker_Interface()
         #self.gripper.connect()
 
@@ -64,7 +64,7 @@ class UR_BASE(object):
     def speedL(self, ee_speed, acc=0.25, control_period=0.02):
         self.rtde_c.speedL(ee_speed, acc, control_period)
 
-    def servoL(self, pose, speed=0.01, acc=0.02, time=0.5, lookahead_time=0.1, gain=300):
+    def servoL(self, pose, speed=0.01, acc=0.02, time=0.45, lookahead_time=0.1, gain=300):
         '''
         控制机器人末端执行器以线性方式伺服移动到目标位姿（工具空间中）。
         该方法适用于实时轨迹跟踪或动态目标更新的场景，如视觉伺服或远程操作。

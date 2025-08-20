@@ -1,9 +1,5 @@
-num = 0
-while True:
-    if num == 100:
-        break 
-
-    if num % 10 == 0:
-        print(f"{num/10}")
-
-    num+=1
+a={1:"a",2:"b",3:"c"}
+a.update({4:"d"})
+print(a)
+a.update({2:"e"})
+print(a)

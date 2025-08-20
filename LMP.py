@@ -116,6 +116,7 @@ class LMP:
         self.shared_queue = SharedQueue()
         self.executed_path_voxel = []
         self.init_condition = threading.Condition()
+        self.wakeup_flag = False
 
         self.movable_var = None
         self.affordable_map = None
@@ -136,7 +137,9 @@ class LMP:
                 time.sleep(1)
 
 
-    def generate_planning(self, query):
+    def generate_planning(self, query, lmp_env):
+        self._context = lmp_env.objects
+
         user_query = f'{self._cfg["query_prefix"]}{query}{self._cfg["query_suffix"]}'
 
         planner_prompt = self._planner_prompt
@@ -144,7 +147,7 @@ class LMP:
         if self._context :
             user_query = f"# Objects : {self._context}\n" + user_query
 
-        #print(user_query)
+        print(user_query)
 
         client = OpenAI(api_key=self.api_key,base_url=self.base_url)
         
@@ -174,6 +177,8 @@ class LMP:
 
         prompt = self._action_state_prompt
 
+        print(objects)
+
         completion = client.chat.completions.create(
             model=self._cfg['vision_model'],  
             messages=[{"role": "user","content": [
@@ -200,8 +205,10 @@ class LMP:
             affordable_map = lmp_env._get_default_voxel_map('target')()
             affordable_var = affordable["object"]
             object = object_state[affordable_var]["obs"]
-            center_x, center_y, center_z = eval(affordable["center_x, center_y, center_z"])
-            (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(affordable["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
+            if "center_x, center_y, center_z" in affordable.keys():
+                center_x, center_y, center_z = eval(affordable["center_x, center_y, center_z"])
+            if "(min_x, min_y, min_z), (max_x, max_y, max_z)" in affordable.keys():
+                (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(affordable["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
             x = eval(affordable["x"])
             y = eval(affordable["y"])
             z = eval(affordable["z"])
@@ -221,8 +228,10 @@ class LMP:
                 print(f"Object {avoidance_var} not found in scene in this step.")
                 pass
             object = object_state[avoidance_var]["obs"]
-            center_x, center_y, center_z = eval(avoidance["center_x, center_y, center_z"])
-            (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(avoidance["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
+            if "center_x, center_y, center_z" in avoidance.keys():
+                center_x, center_y, center_z = eval(avoidance["center_x, center_y, center_z"])
+            if "(min_x, min_y, min_z), (max_x, max_y, max_z)" in avoidance.keys():
+                (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(avoidance["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
             x = eval(avoidance["x"])
             y = eval(avoidance["y"])
             z = eval(avoidance["z"])
@@ -241,8 +250,10 @@ class LMP:
                 return gripper_map
             gripper_var = action_state["gripper"]["object"]
             object = object_state[gripper_var]["obs"]
-            center_x, center_y, center_z = eval(gripper["center_x, center_y, center_z"])
-            (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(gripper["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
+            if "center_x, center_y, center_z" in gripper.keys():
+                center_x, center_y, center_z = eval(gripper["center_x, center_y, center_z"])
+            if "(min_x, min_y, min_z), (max_x, max_y, max_z)" in gripper.keys():
+                (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(gripper["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
             x = eval(gripper["x"])
             y = eval(gripper["y"])
             z = eval(gripper["z"])
@@ -287,7 +298,8 @@ class LMP:
         update_count = 0
         last_log_time = time.time()
         while not self.update_stop_event.is_set():
-            object_state = state_manager.get_state(blocking = True, timeout = 30.0)
+            object_state = state_manager.get_state(blocking = True, timeout = 300.0)
+            #print(object_state)
             affordable_map = self.__get__affordable_map(action_state,lmp_env,object_state)
             rotation_map = self.__get__rotation_map(action_state,lmp_env,object_state)
             velocity_map = self.__get__velocity_map(action_state,lmp_env,object_state)
@@ -307,8 +319,11 @@ class LMP:
                 self.velocity_map = velocity_map
                 self.gripper_map = gripper_map
                 update_count += 1
-        
-            self.init_condition.notify()
+
+            if not self.wakeup_flag:
+                with self.init_condition:
+                    self.init_condition.notify()
+                    self.wakeup_flag = True
             # 每2秒打印一次更新次数
             current_time = time.time()
             if current_time - last_log_time >= 2.0:
@@ -381,7 +396,7 @@ class LMP:
             # execute waypoint
             lmp_env.ur5.execute(waypoint,gripper)
             self.executed_path_voxel.append(voxel_xyz.copy())
-            time.sleep(0.5)
+            time.sleep(0.45)
 
             dist2target = np.linalg.norm(curr_xyz - lmp_env._voxel_to_world(queue_list[-1]))
 
@@ -396,10 +411,13 @@ class LMP:
 
 
     def __call__(self, query, lmp_env, state_manager, voxel_visualizer):
-        planning = self.generate_planning(query)
+        planning = self.generate_planning(query,lmp_env)
         print(planning)
         planning_ = planning.copy()
         while len(planning) >= 0:
+            self.wakeup_flag = False
+            self.move = False
+
             if len(planning) == 0:
                 print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] finished all planning{bcolors.ENDC}")
                 break
@@ -407,6 +425,7 @@ class LMP:
             action = planning.pop(0)
             if action == "reset to default pose":
                 lmp_env.ur5.reset_to_default_pose()
+                time.sleep(5)
                 continue
 
             action_state = None
@@ -441,7 +460,8 @@ class LMP:
             execute_thread.daemon = True  # 设置为守护线程，随主线程退出
             
             map_thread.start()
-            self.init_condition.wait()
+            with self.init_condition:
+                self.init_condition.wait()
             traj_thread.start()
             execute_thread.start()
 

@@ -5,10 +5,8 @@ from Threads import Update_State_Thread, Execute_Thread
 from StateManager import StateManager
 import threading
 import time
-import queue
 import numpy as np
 from Costmapvisualizer3D import VoxelSceneVisualizer
-
 
 #load config
 config_path = "configs/vlm_rlbench_config.yaml"
@@ -30,26 +28,29 @@ init_pose = np.array([
     -0.131
     ])
 ur5 = UR_BASE("192.168.111.10",fisrt_tcp=init_pose)
-time.sleep(6)
+time.sleep(10)
 
 voxposer_ui, lmp_env = setup_LMP(config,ur5)
 
-instruction = "Grasp the tape and place it on the mouse."
+instruction = "Grasp the black tape and place it on the mouse pad."
 
 finished_event = threading.Event()
+condition = threading.Condition()
 
-def update_state(instruction,finished_event,state_manager,):
-    lmp_env.update_mask_entities(instruction,finished_event,state_manager,)
+def update_state(instruction,finished_event,state_manager,condition):
+    lmp_env.update_mask_entities(instruction,finished_event,state_manager,condition)
 
 def run_voxposer_ui(instruction,lmp_env,finished_event,state_manager,voxel_visualizer,):
     voxposer_ui(instruction,lmp_env,state_manager,voxel_visualizer,)
     finished_event.set()
 
 
-thread1 = Update_State_Thread(target=update_state, args=(instruction,finished_event,state_manager,))
+thread1 = Update_State_Thread(target=update_state, args=(instruction,finished_event,state_manager,condition))
 thread2 = Execute_Thread(target=run_voxposer_ui, args=(instruction,lmp_env,finished_event,state_manager,voxel_visualizer,))
 
 thread1.start()
+with condition:
+    condition.wait()
 thread2.start()
 thread2.join()
 thread1.join()

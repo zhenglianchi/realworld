@@ -15,7 +15,6 @@ import json_numpy
 import os
 from scipy.spatial.transform import Rotation as R
 from camera import Camera
-from grasp_module import infer_grasps
 
 matplotlib.use('Agg')
 
@@ -49,6 +48,7 @@ class LMP_interface():
     self.fast_planner = Fast_PathPlanner(planner_config)
     self.camera = Camera()
     self.ur5 = ur5
+    self.objects = None
 
     # calculate size of each voxel (resolution)
     self._resolution = (self.ur5.workspace_bounds_max - self.ur5.workspace_bounds_min) / self._map_size
@@ -135,7 +135,7 @@ class LMP_interface():
     return rgb, bbox
 
 
-  def update_mask_entities(self,instruction,finished_event,state_manager):
+  def update_mask_entities(self,instruction,finished_event,state_manager,condition):
       if not os.path.exists("tmp/images"):
           os.makedirs("tmp/images")
       if not os.path.exists("tmp/masks"):
@@ -149,6 +149,8 @@ class LMP_interface():
       print("正在处理yoloe视觉提示...........")
       visuals,objects,label2id,id2label = process_visual_prompt(bbox_entities)
       set_visual_prompt(frame, visuals, objects)
+      self.objects = objects
+      
       print("视觉预处理完成")
       num = 0
       
@@ -193,10 +195,9 @@ class LMP_interface():
             pcd_downsampled = pcd.voxel_down_sample(voxel_size=0.001)
             obj_points = np.asarray(pcd_downsampled.points)
 
-            grasp_pose = None
-            # 如果有抓取事件，则进行抓取
+
             end_time = time.time()
-            obs = self.get_obs(obj_points, label, grasp_pose)
+            obs = self.get_obs(obj_points, label)
             state[label] = obs
 
             x_min, y_min, x_max, y_max = box
@@ -211,13 +212,16 @@ class LMP_interface():
         state['workspace'] = self.get_table_obs()
 
         state_manager.write_state(state)
+        
+        with condition:
+          condition.notify_all()
 
         end_time = time.time()  # 记录结束时间
         print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated object state in {end_time - start_time:.3f}s{bcolors.ENDC}")
         plt.axis('off')
         plt.draw()
         if num % 10 == 0:
-          plt.savefig(f"tmp/masks/mask_{num/10}.jpeg", bbox_inches='tight', pad_inches=0)
+          plt.savefig(f"tmp/masks/mask_{int(num/10)}.jpeg", bbox_inches='tight', pad_inches=0)
         num+=1
   
 

@@ -36,9 +36,6 @@ class StateManager:
             return
         self._running = True
 
-        self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
-        self._monitor_thread.start()
-
         self._logger_thread = threading.Thread(target=self._log_loop, daemon=True)
         self._logger_thread.start()
 
@@ -47,25 +44,6 @@ class StateManager:
         self._running = False
         with self._condition:
             self._condition.notify_all()
-
-    def _monitor_loop(self):
-        """后台循环：检查文件是否更新"""
-        while self._running:
-            try:
-                current_mtime = os.path.getmtime(self.file_path)
-                if current_mtime > self._mtime:
-                    new_state = self._read_file()
-                    if new_state is not None:
-                        with self._condition:
-                            self._state = new_state
-                            self._mtime = current_mtime
-                            self._update_count += 1
-                            self._condition.notify_all()  # 广播更新
-            except FileNotFoundError:
-                pass
-            except Exception as e:
-                print(f"[StateManager] Error reading {self.file_path}: {e}")
-            time.sleep(self.poll_interval)
 
     def _log_loop(self):
         """日志线程：每 log_interval 秒打印一次更新频率"""
@@ -86,7 +64,10 @@ class StateManager:
         """
         try:
             with self._condition:
-                self._state = data.copy()
+                if self._state is not None:
+                    self._state.update(data.copy())
+                else:
+                    self._state = data.copy()
                 self._mtime = time.time()
                 self._update_count += 1
                 self._condition.notify_all()
