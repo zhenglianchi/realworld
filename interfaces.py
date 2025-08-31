@@ -8,6 +8,7 @@ from scipy.ndimage import distance_transform_edt
 import open3d as o3d
 from VLM_demo import  write_state, get_world_bboxs_list,show_mask,process_visual_prompt,set_visual_prompt,predict_mask,encode_image,resize_bbox_to_original,smart_resize,get_response
 from PIL import Image
+from scipy.ndimage import binary_erosion
 import matplotlib.pyplot as plt
 import matplotlib
 import json
@@ -15,6 +16,7 @@ import json_numpy
 import os
 from scipy.spatial.transform import Rotation as R
 from camera import Camera
+from test_draw_axis import draw_axis
 
 matplotlib.use('Agg')
 
@@ -57,16 +59,15 @@ class LMP_interface():
 
   def get_obs(self, obj_pc, label):
     obs_dict = dict()
-    voxel_map = self._points_to_voxel_map(obj_pc)
+    #voxel_map = self._points_to_voxel_map(obj_pc)
     aabb_min = self._world_to_voxel(np.min(obj_pc, axis=0))
     aabb_max = self._world_to_voxel(np.max(obj_pc, axis=0))
-    obs_dict['occupancy_map'] = voxel_map  # in voxel frame
+    #obs_dict['occupancy_map'] = voxel_map  # in voxel frame
     obs_dict['name'] = label
     obs_dict['position'] = self._world_to_voxel(np.mean(obj_pc, axis=0))  # in voxel frame
     obs_dict['aabb'] = np.array([aabb_min, aabb_max])  # in voxel frame
     obs_dict['_position_world'] = np.mean(obj_pc, axis=0)  # in world frame
-    obs_dict['_point_cloud_world'] = obj_pc  # in world frame
-
+    #obs_dict['_point_cloud_world'] = obj_pc  # in world frame
     object_obs = {"obs":Observation(obs_dict)}
     return object_obs
 
@@ -75,30 +76,11 @@ class LMP_interface():
       obs_dict = dict()
       obs_dict['name'] = "gripper"
       obs_dict['position'] = self.get_ee_pos()
-      obs_dict['aabb'] = np.array([self.get_ee_pos(), self.get_ee_pos()])
+      obs_dict['rotation'] = self.ur5.get_tcp()[3:]
       obs_dict['_position_world'] = self.ur5.get_tcp()[:3]
       object_obs = {"obs":Observation(obs_dict)}
       return object_obs
 
-  def get_table_obs(self):
-      offset_percentage = 0.1
-      x_min = self.ur5.workspace_bounds_min[0] + offset_percentage * (self.ur5.workspace_bounds_max[0] - self.ur5.workspace_bounds_min[0])
-      x_max = self.ur5.workspace_bounds_max[0] - offset_percentage * (self.ur5.workspace_bounds_max[0] - self.ur5.workspace_bounds_min[0])
-      y_min = self.ur5.workspace_bounds_min[1] + offset_percentage * (self.ur5.workspace_bounds_max[1] - self.ur5.workspace_bounds_min[1])
-      y_max = self.ur5.workspace_bounds_max[1] - offset_percentage * (self.ur5.workspace_bounds_max[1] - self.ur5.workspace_bounds_min[1])
-      table_max_world = np.array([x_max, y_max, 0])
-      table_min_world = np.array([x_min, y_min, 0])
-      table_center = (table_max_world + table_min_world) / 2
-      obs_dict = dict()
-      obs_dict['name'] = "workspace"
-      obs_dict['position'] = self._world_to_voxel(table_center)
-      obs_dict['_position_world'] = table_center
-      obs_dict['aabb'] = np.array([self._world_to_voxel(table_min_world), self._world_to_voxel(table_max_world)])
-
-      object_obs = {"obs":Observation(obs_dict)}
-      return object_obs
-
-  
 
   def transform_points_to_world(self, points_homogeneous, T_camera_to_world):
     """
@@ -152,17 +134,19 @@ class LMP_interface():
       self.objects = objects
       
       print("视觉预处理完成")
-      num = 0
       
       while not finished_event.is_set():
         start_time = time.time()
 
         frame, meter_depth = self.camera.get_aligned_images()
+
+        frame_draw = draw_axis(self.camera, self.ur5, frame)
+
         # 这里创建的点云，原点为相机坐标系中心
         pcd_ = self.camera.create_point_cloud_from_depth_image(meter_depth)
 
         plt.clf()
-        plt.imshow(frame)
+        plt.imshow(frame_draw)
         boxes, masks_ = predict_mask(frame)
 
         for (box_entity, mask) in zip(boxes, masks_):
@@ -175,7 +159,7 @@ class LMP_interface():
             h, w = mask.shape[-2:]
             show_mask(mask,plt.gca())
             mask =  mask.reshape(h, w).reshape(-1)
-
+            mask = binary_erosion(mask)
             masks.append(mask)
 
             points, masks = np.array(points), np.array(masks)
@@ -209,7 +193,6 @@ class LMP_interface():
 
 
         state['gripper'] = self.get_ee_obs()
-        state['workspace'] = self.get_table_obs()
 
         state_manager.write_state(state)
         
@@ -220,10 +203,8 @@ class LMP_interface():
         print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated object state in {end_time - start_time:.3f}s{bcolors.ENDC}")
         plt.axis('off')
         plt.draw()
-        if num % 10 == 0:
-          plt.savefig(f"tmp/masks/mask_{int(num/10)}.jpeg", bbox_inches='tight', pad_inches=0)
-        num+=1
-  
+        plt.savefig(f"tmp/masks/mask_latest.jpeg", bbox_inches='tight', pad_inches=0)
+
 
   def get_ee_pos(self):
     return self._world_to_voxel(self.ur5.get_tcp()[:3])
@@ -294,8 +275,6 @@ class LMP_interface():
         voxel_map = np.zeros((self._map_size, self._map_size, self._map_size))
       elif type == 'obstacle':  # for LLM to do customization
         voxel_map = np.zeros((self._map_size, self._map_size, self._map_size))
-      elif type == 'velocity':
-        voxel_map = np.ones((self._map_size, self._map_size, self._map_size))
       elif type == 'gripper':
         # 这里gripper:1->0为张开;0->1为闭合
         voxel_map = np.ones((self._map_size, self._map_size, self._map_size))

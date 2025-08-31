@@ -72,3 +72,11 @@ class Camera:
         return extrinsic_matrix
 
 
+    def get_intrinsic_matrix(self):
+        fx, fy = self.fx, self.fy
+        cx, cy = self.cx, self.cy
+        intrinsic_matrix = np.array([[fx, 0, cx],
+                    [0, fy, cy],
+                    [0,  0,  1]])
+        
+        return intrinsic_matrix

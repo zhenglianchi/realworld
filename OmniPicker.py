@@ -1,5 +1,4 @@
 import serial
-import time
 '''
 设置UR5 TCP位置将夹爪末端设置为TCP
 '''
@@ -39,7 +38,7 @@ class OmniPicker_Interface:
         # Calculate checksum
         checksum = self.calculate_checksum(self.set_can_baudrate)
         self.set_can_baudrate.append(checksum)
-        print(self.set_can_baudrate)
+        #print(self.set_can_baudrate)
         self.set_can_baudrate = bytes(self.set_can_baudrate)
 
         # Send command to set CAN baud rate
@@ -166,3 +165,5 @@ class OmniPicker_Interface:
             0x55,     # 14 Frame data 4       CAN sends  data 4
         ])
         self.ser.write(send_can_id_data)
+
+

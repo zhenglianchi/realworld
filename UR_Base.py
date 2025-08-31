@@ -10,13 +10,13 @@ class UR_BASE(object):
         self.rtde_c = rtde_control.RTDEControlInterface(HOST)
         self.rtde_r = rtde_receive.RTDEReceiveInterface(HOST)
         self.current_tcp = self.get_tcp()
-        self.workspace_bounds_min = np.array([-1.27499999, -1.65500004,  0.15199986])
-        self.workspace_bounds_max = np.array([1.77499999, 1.65500004, 1.75199986])
+        self.workspace_bounds_min = np.array([-0.671, -0.538,  0.01])
+        self.workspace_bounds_max = np.array([-0.101, 0.057, 0.6])
         if fisrt_tcp is not None:
             self.init_pose = fisrt_tcp
             self.moveL(fisrt_tcp,speed=0.1,acc=0.05)
         self.gripper = OmniPicker_Interface()
-        #self.gripper.connect()
+        self.gripper.connect()
 
     def reset_to_default_pose(self):
         self.servoL(self.init_pose, time=2)
@@ -102,14 +102,22 @@ class UR_BASE(object):
         pose = pose.tolist()
         self.rtde_c.servoL(pose, speed, acc, time, lookahead_time, gain)
 
-    def execute(self, waypoint, gripper):
-        target_pose = np.concatenate((waypoint[0], waypoint[1]))
+    def execute(self, waypoint):
+        x,y,z,rx,ry,rz = waypoint[0][0], waypoint[0][1], waypoint[0][2], waypoint[1][0], waypoint[1][1], waypoint[1][2]
+        if x>self.workspace_bounds_max[0] or x<self.workspace_bounds_min[0] or y>self.workspace_bounds_max[1] or y<self.workspace_bounds_min[1] or z>self.workspace_bounds_max[2] or z<self.workspace_bounds_min[2]:
+            print("超出工作区范围")
+            return False
+
+        gripper = waypoint[2]
+        target_pose = np.array([x, y, z, rx, ry, rz])
         self.servoL(target_pose)
         print(gripper)
         '''if gripper == 1:
             self.gripper.gripper_close()
         elif gripper == 0:
             self.gripper.gripper_open()'''
+        
+        return True
 
     def ur_pose_to_matrix(self):
         """

@@ -27,12 +27,13 @@ init_pose = np.array([
     -1.579,
     -0.131
     ])
+
 ur5 = UR_BASE("192.168.111.10",fisrt_tcp=init_pose)
 time.sleep(10)
 
 voxposer_ui, lmp_env = setup_LMP(config,ur5)
 
-instruction = "Grasp the black tape and place it on the mouse pad."
+instruction = "close the gripper."
 
 finished_event = threading.Event()
 condition = threading.Condition()

@@ -265,21 +265,22 @@ class LMP:
     
     def __get__rotation_map(self,action_state,lmp_env,object_state):
         rotation_map = lmp_env._get_default_voxel_map('rotation')()
+        rotation = action_state["rotation"]
+        rotation_set = rotation["set"]
+        if rotation_set != "default" :
+            rotation_var = rotation["object"]
+            object = object_state[rotation_var]["obs"]
+            axis = rotation["axis"]
+            angle_deg = eval(rotation["angle_deg"])
+            current_rotation = eval(rotation["current_rotation"])
+            target_rotation = eval(rotation["target_rotation"])
+            rotation_map[:, :, :] = target_rotation
         return rotation_map
-    
-    def __get__velocity_map(self,action_state,lmp_env,object_state):
-        velocity_map = lmp_env._get_default_voxel_map('velocity')()
-        velocity = action_state["velocity"]
-        velocity_set = velocity["set"]
-        if velocity_set != "default" :
-            target_velocity = velocity["target_velocity"]
-            velocity_map[:] = target_velocity
-        return velocity_map
 
 
     def get_map(self):
         with self.map_lock:
-            return self.movable_var, self.affordable_map, self.avoidance_map, self.rotation_map, self.velocity_map, self.gripper_map
+            return self.movable_var, self.affordable_map, self.avoidance_map, self.rotation_map, self.gripper_map
     
     def get_cost_map(self,lmp_env, affordable_map, avoidance_map):
         target_map = affordable_map
@@ -302,7 +303,6 @@ class LMP:
             #print(object_state)
             affordable_map = self.__get__affordable_map(action_state,lmp_env,object_state)
             rotation_map = self.__get__rotation_map(action_state,lmp_env,object_state)
-            velocity_map = self.__get__velocity_map(action_state,lmp_env,object_state)
             gripper_map = self.__get__gripper_map(action_state,lmp_env,object_state)
             avoidance_map = self.__get__avoidance_map(action_state,lmp_env,object_state)
 
@@ -316,7 +316,6 @@ class LMP:
                 self.affordable_map = affordable_map
                 self.avoidance_map = avoidance_map
                 self.rotation_map = rotation_map
-                self.velocity_map = velocity_map
                 self.gripper_map = gripper_map
                 update_count += 1
 
@@ -343,7 +342,7 @@ class LMP:
 
             start_time = time.time()
 
-            movable_var, affordance_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map()
+            movable_var, affordance_map, avoidance_map, rotation_map, gripper_map = self.get_map()
 
             start_pos = lmp_env.get_ee_pos().copy()  # 直接获取实时位置
             
@@ -360,22 +359,20 @@ class LMP:
 
     def __thread_execute_traj(self, lmp_env):
         while not self.exec_stop_event.is_set():
-            movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map()
+            movable_var, affordable_map, avoidance_map, rotation_map, gripper_map = self.get_map()
 
             curr_xyz = lmp_env.ur5.get_tcp()[:3]  # 直接获取实时位置
             current_voxel_xyz = np.array(lmp_env._world_to_voxel(curr_xyz))
 
             if self.shared_queue.size() == 0:
                 if self.update_stop_event.is_set():
-                    rotation = lmp_env.ur5.get_tcp()[3:]
-                    rotation_map[current_voxel_xyz[0], current_voxel_xyz[1], current_voxel_xyz[2]] = rotation
                     
-                    velocity = velocity_map[current_voxel_xyz[0], current_voxel_xyz[1], current_voxel_xyz[2]]
                     gripper = gripper_map[current_voxel_xyz[0], current_voxel_xyz[1], current_voxel_xyz[2]]
+                    rotation = rotation_map[current_voxel_xyz[0], current_voxel_xyz[1], current_voxel_xyz[2]]
                 
-                    waypoint = (curr_xyz, rotation, velocity, gripper)
+                    waypoint = (curr_xyz, rotation, gripper)
                     # execute waypoint
-                    lmp_env.ur5.execute(waypoint,gripper)
+                    lmp_env.ur5.execute(waypoint)
                     self.exec_stop_event.set()
                     break
                 else:
@@ -384,17 +381,20 @@ class LMP:
             voxel_xyz,queue_list = lmp_env.fast_planner.generate_fast_point_3d_vectorized(current_voxel_xyz, self.shared_queue, affordable_map, avoidance_map)
             world_xyz = lmp_env._voxel_to_world(voxel_xyz)
             voxel_xyz = np.round(voxel_xyz).astype(int)
-
-            rotation = lmp_env.ur5.get_tcp()[3:]
-            rotation_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]] = rotation
             
-            velocity = velocity_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
             gripper = gripper_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
+            rotation = rotation_map[current_voxel_xyz[0], current_voxel_xyz[1], current_voxel_xyz[2]]
         
-            waypoint = (world_xyz, rotation, velocity, gripper)
+            waypoint = (world_xyz, rotation, gripper)
 
             # execute waypoint
-            lmp_env.ur5.execute(waypoint,gripper)
+            signal = lmp_env.ur5.execute(waypoint)
+            if not signal :
+                print(f"{bcolors.FAIL}[interfaces.py | {get_clock_time()}] Failed to execute waypoint{bcolors.ENDC}")
+                self.exec_stop_event.set()
+                self.update_stop_event.set()
+                break
+
             self.executed_path_voxel.append(voxel_xyz.copy())
             time.sleep(0.45)
 
@@ -476,7 +476,7 @@ class LMP:
 
             if self.move:
                 print("正在生成可视化文件...")
-                movable_var, affordable_map, avoidance_map, rotation_map, velocity_map, gripper_map = self.get_map()
+                movable_var, affordable_map, avoidance_map, rotation_map, gripper_map = self.get_map()
                 costmap = self.get_cost_map(lmp_env, affordable_map, avoidance_map)
                 scenemap = lmp_env._get_scene_collision_voxel_map()
 
@@ -601,3 +601,44 @@ def set_voxel_by_radius(voxel_map, voxel_xyz, radius_cm=0, value=1):
       max_z = min(_map_size, voxel_xyz[2] + radius_z + 1)
       voxel_map[min_x:max_x, min_y:max_y, min_z:max_z] = value
     return voxel_map
+
+def rotate_pose_local_axis(rotvec_current, axis='x', angle_deg=30, degrees=False):
+    """
+    在当前姿态基础上，绕自身的 X/Y/Z 轴（局部坐标系）进行旋转，返回新的轴角表示。
+
+    参数：
+        rotvec_current (list or np.ndarray): 当前旋转向量 [Rx, Ry, Rz]（弧度）
+        axis (str): 要绕的轴，支持 'x', 'y', 'z'（不区分大小写）
+        angle_deg (float): 旋转角度（默认为度数）
+        degrees (bool): 如果 True，angle_deg 是度数；否则是弧度
+
+    返回：
+        rotvec_new (np.ndarray): 旋转后的新旋转向量 [Rx, Ry, Rz]（弧度）
+    """
+    # 确保输入是 numpy 数组
+    rotvec_current = np.array(rotvec_current).astype(float)
+    
+    # 角度转换：输入 angle_deg 是度数或弧度
+    angle_rad = np.radians(angle_deg) if degrees else angle_deg
+
+    # 1. 将当前旋转向量转为 Rotation 对象
+    current_rotation = R.from_rotvec(rotvec_current)
+
+    # 2. 创建绕指定局部轴的增量旋转（注意：绕自身轴 → 右乘，使用 *）
+    if axis.lower() == 'x':
+        delta_rotation = R.from_rotvec([angle_rad, 0, 0])
+    elif axis.lower() == 'y':
+        delta_rotation = R.from_rotvec([0, angle_rad, 0])
+    elif axis.lower() == 'z':
+        delta_rotation = R.from_rotvec([0, 0, angle_rad])
+    else:
+        raise ValueError("axis must be one of 'x', 'y', 'z'")
+
+    # 3. 组合旋转：绕自身轴 = 当前姿态 × 增量旋转（右乘）
+    # 即：新姿态 = 原姿态 + 在自身坐标系下的旋转
+    new_rotation = current_rotation * delta_rotation
+
+    # 4. 转回旋转向量
+    rotvec_new = new_rotation.as_rotvec()  # 默认返回一维数组
+
+    return rotvec_new
