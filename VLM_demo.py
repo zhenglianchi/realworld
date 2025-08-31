@@ -49,7 +49,7 @@ def set_visual_prompt(source_image,prompts,classes):
 
 def predict_mask(target_image):
     input_image = torch.from_numpy(target_image).permute(2, 0, 1).unsqueeze(0).float().cuda() / 255.0
-    result = model.predict(input_image, save=False, conf=0.1, iou=0.05, verbose=False, imgsz=(480,640))
+    result = model.predict(input_image, save=False, conf=0.5, iou=0.05, verbose=False, imgsz=(480,640))
     if result[0].masks is None:
         return [], []
     masks = result[0].masks.data

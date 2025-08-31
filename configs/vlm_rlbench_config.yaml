@@ -5,7 +5,7 @@ planner:
   savgol_polyorder: 3
   savgol_window_size: 20
   obstacle_map_weight: 1
-  max_steps: 100
+  max_steps: 200
   obstacle_map_gaussian_sigma: 10
   target_map_weight: 2
   stop_criteria: no_nearby_equal
@@ -13,12 +13,14 @@ planner:
   max_curvature: 3
   pushing_skip_per_k: 5
   nearby_radius: 3
+  heuristic_weight: 1.0           # 启发式权重（通常为1.0）
+  max_astar_steps: 10000          # 防止无限搜索
 
   map_size: 200
   
-  fast_num_candidates: 15
+  fast_num_candidates: 30
   fast_alpha: 1.0
-  fast_beta: 2.0
+  fast_beta: 1.0
   avoid_weight: 5.0
   fast_radius: 5
 

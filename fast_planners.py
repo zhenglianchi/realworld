@@ -12,6 +12,7 @@ class Fast_PathPlanner:
     def generate_fast_point_3d_vectorized(self, current_pos, share_queue, affordable_map, avoidance_map):
         current_pos = np.array(current_pos, dtype=int)
         slow_points = np.array(share_queue.get_all().copy())
+        print(slow_points[:-5])
 
         # 1. 找到清除最近点后的最远的慢系统点作为引导方向
         distances = np.linalg.norm(slow_points - current_pos, axis=1)

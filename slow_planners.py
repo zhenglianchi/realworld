@@ -38,10 +38,7 @@ class Slow_PathPlanner:
             # Find the minimum cost voxel
             steepest_idx = np.argmin(nearby_score)
             next_pos = all_nearby_voxels[steepest_idx]
-            # increase cost at current position to avoid going back
-            _costmap[current_pos[0].round().astype(int),
-                     current_pos[1].round().astype(int),
-                     current_pos[2].round().astype(int)] += 1
+            
             # update path and current position
             path.append(next_pos)
             current_pos = next_pos
@@ -108,6 +105,6 @@ class Slow_PathPlanner:
                 if skip_ratio > 1:
                     path_trimmed = path_trimmed[::skip_ratio]
         path = np.concatenate([path[0:1], path_trimmed, path[-1:]])
-        path = path.clip(0, self.map_size-1)
+        path = path.clip(0, self.map_size-1).astype(int)
         path_voxel.put_all(path)
 

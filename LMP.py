@@ -216,6 +216,7 @@ class LMP:
             x,y,z = np.array([x,y,z]).astype(int)
             affordable_map[x,y,z] = target_affordance
             self.move = True
+            print(x,y,z)
         return affordable_map
     
     def __get__avoidance_map(self,action_state,lmp_env,object_state):
@@ -247,6 +248,9 @@ class LMP:
         if gripper_set != "default" :
             if gripper_set == "gripper_map[:, :, :] = 1" :
                 gripper_map[:, :, :] = 1
+                return gripper_map
+            elif gripper_set == "gripper_map[:, :, :] = 0" :
+                gripper_map[:, :, :] = 0
                 return gripper_map
             gripper_var = action_state["gripper"]["object"]
             object = object_state[gripper_var]["obs"]
@@ -302,8 +306,10 @@ class LMP:
             object_state = state_manager.get_state(blocking = True, timeout = 300.0)
             #print(object_state)
             affordable_map = self.__get__affordable_map(action_state,lmp_env,object_state)
-            rotation_map = self.__get__rotation_map(action_state,lmp_env,object_state)
-            gripper_map = self.__get__gripper_map(action_state,lmp_env,object_state)
+            if not self.wakeup_flag:
+                rotation_map = self.__get__rotation_map(action_state,lmp_env,object_state)
+                gripper_map = self.__get__gripper_map(action_state,lmp_env,object_state)
+
             avoidance_map = self.__get__avoidance_map(action_state,lmp_env,object_state)
 
             affordable_map = distance_transform_edt(1 - affordable_map)
@@ -347,7 +353,7 @@ class LMP:
             start_pos = lmp_env.get_ee_pos().copy()  # 直接获取实时位置
             
             costmap = self.get_cost_map(lmp_env, affordance_map, avoidance_map)
-
+            
             # Optimize path and log
             lmp_env.slow_planner.optimize(start_pos, costmap, self.shared_queue)
             assert not self.shared_queue.empty(), 'path_voxel is empty'
@@ -403,7 +409,7 @@ class LMP:
             print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint: (wp: {waypoint[0].round(3)}, voxel: {voxel_xyz.round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {queue_list[-1].round(3)}, start: {current_voxel_xyz}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
 
             # check if the movement is finished 5cm
-            if dist2target <= 0.05 or self.shared_queue.size() == 0:
+            if dist2target <= 0.01 or self.shared_queue.size() == 0:
                 print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={curr_xyz}, target={queue_list[-1]} (distance: {dist2target:.3f})){bcolors.ENDC}")
                 self.exec_stop_event.set()
                 self.update_stop_event.set()
@@ -412,6 +418,7 @@ class LMP:
 
     def __call__(self, query, lmp_env, state_manager, voxel_visualizer):
         planning = self.generate_planning(query,lmp_env)
+        planning = list(filter(None, planning))
         print(planning)
         planning_ = planning.copy()
         while len(planning) >= 0:
@@ -446,6 +453,7 @@ class LMP:
                     json.dump(action_state, json_file)
 
             print(action_state)
+            a = input("press any key to continue...")
 
             # 启动更新路径的线程
             map_thread = map_Thread(target=self.__thread_update_map, args=(lmp_env, action_state, state_manager))

@@ -16,7 +16,8 @@ import json_numpy
 import os
 from scipy.spatial.transform import Rotation as R
 from camera import Camera
-from test_draw_axis import draw_axis
+from draw_axis import draw_axis
+from sklearn.cluster import DBSCAN
 
 matplotlib.use('Agg')
 
@@ -107,6 +108,42 @@ class LMP_interface():
     points_world = points_world.T[:, :3]
 
     return points_world
+  
+
+  def filter_largest_cluster(self, points, eps=0.01, min_samples=10):
+    """
+    对输入的3D点云进行聚类，保留点数最多的主簇，去除离群点。
+
+    参数:
+        points (np.ndarray): 形状为 (N, 3) 的点云
+        eps (float): DBSCAN的邻域半径（单位：米）
+        min_samples (int): 核心点所需的最小邻域点数
+
+    返回:
+        np.ndarray: 形状为 (M, 3)，属于最大簇的点，M <= N
+    """
+    if len(points) == 0:
+        return points
+
+    # 执行 DBSCAN 聚类
+    clustering = DBSCAN(eps=eps, min_samples=min_samples, algorithm='kd_tree', n_jobs=1).fit(points)
+    labels = clustering.labels_
+
+    # -1 表示噪声点
+    if np.all(labels == -1):
+        print("Warning: All points are labeled as noise in DBSCAN.")
+        return np.empty((0, 3))
+
+    # 找出最大的非噪声簇
+    unique_labels = labels[labels != -1]
+    if len(unique_labels) == 0:
+        return np.empty((0, 3))
+
+    # 获取最大簇的 label
+    largest_cluster_label = np.bincount(unique_labels).argmax()
+
+    # 返回最大簇的点
+    return points[labels == largest_cluster_label]
 
   def qwen_vl_box(self,instruction):
     rgb, img_depth = self.camera.get_aligned_images()
@@ -179,6 +216,7 @@ class LMP_interface():
             pcd_downsampled = pcd.voxel_down_sample(voxel_size=0.001)
             obj_points = np.asarray(pcd_downsampled.points)
 
+            obj_points = self.filter_largest_cluster(obj_points, eps=0.01, min_samples=10)
 
             end_time = time.time()
             obs = self.get_obs(obj_points, label)
@@ -277,7 +315,7 @@ class LMP_interface():
         voxel_map = np.zeros((self._map_size, self._map_size, self._map_size))
       elif type == 'gripper':
         # 这里gripper:1->0为张开;0->1为闭合
-        voxel_map = np.ones((self._map_size, self._map_size, self._map_size))
+        voxel_map = np.ones((self._map_size, self._map_size, self._map_size)) * self.ur5.get_gripper_state()
       elif type == 'rotation':
         voxel_map = np.zeros((self._map_size, self._map_size, self._map_size, 3))
         voxel_map[:, :, :] = self.ur5.get_tcp()[3:]

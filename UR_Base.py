@@ -10,8 +10,8 @@ class UR_BASE(object):
         self.rtde_c = rtde_control.RTDEControlInterface(HOST)
         self.rtde_r = rtde_receive.RTDEReceiveInterface(HOST)
         self.current_tcp = self.get_tcp()
-        self.workspace_bounds_min = np.array([-0.671, -0.538,  0.01])
-        self.workspace_bounds_max = np.array([-0.101, 0.057, 0.6])
+        self.workspace_bounds_min = np.array([-1.27499999, -1.65500004,  0.0333333])
+        self.workspace_bounds_max = np.array([1.77499999, 1.65500004, 0.6])
         if fisrt_tcp is not None:
             self.init_pose = fisrt_tcp
             self.moveL(fisrt_tcp,speed=0.1,acc=0.05)
@@ -108,14 +108,17 @@ class UR_BASE(object):
             print("超出工作区范围")
             return False
 
-        gripper = waypoint[2]
+        gripper = int(waypoint[2])
         target_pose = np.array([x, y, z, rx, ry, rz])
         self.servoL(target_pose)
-        print(gripper)
-        '''if gripper == 1:
+        gripper_state = self.get_gripper_state()
+        # 0->1 闭合
+        # 1->0 张开
+        print(gripper_state, gripper)
+        if gripper_state == 0 and gripper == 1:
             self.gripper.gripper_close()
-        elif gripper == 0:
-            self.gripper.gripper_open()'''
+        elif gripper_state == 1 and gripper == 0:
+            self.gripper.gripper_open()
         
         return True
 
@@ -143,3 +146,6 @@ class UR_BASE(object):
         T[:3, 3] = translation
         
         return T
+    
+    def get_gripper_state(self):
+        return self.gripper.gripper_state

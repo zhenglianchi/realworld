@@ -28,6 +28,7 @@ class OmniPicker_Interface:
             0x00,     #  17 Spare
             0x00,     #  18 Spare
         ]
+        self.gripper_state = 1
 
     def calculate_checksum(self,data):
         checksum = sum(data[2:])
@@ -46,11 +47,13 @@ class OmniPicker_Interface:
         self.ser.write(self.set_can_baudrate)
         print(f"Connected to port {self.ser.portstr} OmniPicker")
         self.gripper_open()
+        self.gripper_state = 0
 
     def disconnect(self):
         self.gripper_close()
         self.ser.close()
         print(f"Disconnected from port {self.ser.portstr} OmniPicker")
+        self.gripper_state = 1
 
     def gripper_half_open(self,can_id=0x01):
         # 下行控制 位置，力度，速度，加速度，减速度
@@ -105,6 +108,7 @@ class OmniPicker_Interface:
             0x55,     # 14 Frame data 4       CAN sends  data 4
         ])
         self.ser.write(send_can_id_data)
+        self.gripper_state = 0
 
     def gripper_close(self,can_id=0x01):
         # 下行控制 位置，力度，速度，加速度，减速度
@@ -132,6 +136,7 @@ class OmniPicker_Interface:
             0x55,     # 14 Frame data 4       CAN sends  data 4
         ])
         self.ser.write(send_can_id_data)
+        self.gripper_state = 1
 
     def control(self,can_id=0x01, Pos=0.0, For=100.0, Vel=100.0, Acc=100.0, Dec=100.0):
         # 下行控制 位置，力度，速度，加速度，减速度

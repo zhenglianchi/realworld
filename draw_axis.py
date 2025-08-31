@@ -54,7 +54,7 @@ def draw_axis_on_image(image, K, R, t, axis_length=0.1, min_z=0.1, label="Base")
         return image
 
     # ---------------- 颜色 (BGR格式) ----------------
-    colors = {'X': (0, 0, 255), 'Y': (0, 255, 0), 'Z': (255, 0, 0)}
+    colors = {'Z': (0, 0, 255), 'Y': (0, 255, 0), 'X': (255, 0, 0)}
     labels = ['X', 'Y', 'Z']
     endpoints = [points_2d[1], points_2d[2], points_2d[3]]
 
