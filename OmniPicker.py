@@ -126,7 +126,7 @@ class OmniPicker_Interface:
             #---------------------------------------------------------
             0x00,     # 6  Frame data 1       CAN sends  data 1
             0x00,     # 7  Frame data 2       CAN sends  data 2
-            0x7F,     # 8  Frame data 3       CAN sends  data 3
+            0xFF,     # 8  Frame data 3       CAN sends  data 3
             0x7F,     # 9  Frame data 4       CAN sends  data 4
             0x7F,     # 10 Frame data 5       CAN sends  data 5
             0x7F,     # 11 Frame data 6       CAN sends  data 6

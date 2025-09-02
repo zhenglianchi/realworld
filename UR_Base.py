@@ -19,8 +19,11 @@ class UR_BASE(object):
         self.gripper.connect()
 
     def reset_to_default_pose(self):
-        self.servoL(self.init_pose, time=2)
-        
+        xyz = self.init_pose[:3]
+        rxyz = self.get_tcp()[3:]
+        default_pose = np.concatenate((xyz, rxyz))
+        self.servoL(default_pose, time=2)
+
     def set_digital_out(self, num, bool):
         self.rob.set_digital_out(num, bool)
         self.rtde_c.disconnect()
@@ -102,7 +105,7 @@ class UR_BASE(object):
         pose = pose.tolist()
         self.rtde_c.servoL(pose, speed, acc, time, lookahead_time, gain)
 
-    def execute(self, waypoint):
+    def execute(self, waypoint, time_sleep):
         x,y,z,rx,ry,rz = waypoint[0][0], waypoint[0][1], waypoint[0][2], waypoint[1][0], waypoint[1][1], waypoint[1][2]
         if x>self.workspace_bounds_max[0] or x<self.workspace_bounds_min[0] or y>self.workspace_bounds_max[1] or y<self.workspace_bounds_min[1] or z>self.workspace_bounds_max[2] or z<self.workspace_bounds_min[2]:
             print("超出工作区范围")
@@ -110,7 +113,7 @@ class UR_BASE(object):
 
         gripper = int(waypoint[2])
         target_pose = np.array([x, y, z, rx, ry, rz])
-        self.servoL(target_pose)
+        self.servoL(target_pose,time=time_sleep)
         gripper_state = self.get_gripper_state()
         # 0->1 闭合
         # 1->0 张开

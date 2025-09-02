@@ -430,8 +430,3 @@ Examples:
     }
 ]
 
-note: 
-Please check whether the z-direction of the end effector needs adjustment for rotation.
-For example, a cylindrical object should be grasped from the side. At this point, 
-if the end effector's z-axis is facing down, 
-it needs to be rotated around other axes to align its z-axis with the side of the cylinder.

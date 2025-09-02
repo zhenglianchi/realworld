@@ -364,6 +364,7 @@ class LMP:
 
 
     def __thread_execute_traj(self, lmp_env):
+        first_exc = True
         while not self.exec_stop_event.is_set():
             movable_var, affordable_map, avoidance_map, rotation_map, gripper_map = self.get_map()
 
@@ -393,8 +394,14 @@ class LMP:
         
             waypoint = (world_xyz, rotation, gripper)
 
+            if first_exc:
+                time_sleep = 1.5
+                first_exc = False
+            else:
+                time_sleep = 0.35
+                
             # execute waypoint
-            signal = lmp_env.ur5.execute(waypoint)
+            signal = lmp_env.ur5.execute(waypoint, time_sleep)
             if not signal :
                 print(f"{bcolors.FAIL}[interfaces.py | {get_clock_time()}] Failed to execute waypoint{bcolors.ENDC}")
                 self.exec_stop_event.set()
@@ -402,7 +409,7 @@ class LMP:
                 break
 
             self.executed_path_voxel.append(voxel_xyz.copy())
-            time.sleep(0.45)
+            time.sleep(time_sleep)
 
             dist2target = np.linalg.norm(curr_xyz - lmp_env._voxel_to_world(queue_list[-1]))
 
@@ -453,7 +460,8 @@ class LMP:
                     json.dump(action_state, json_file)
 
             print(action_state)
-            a = input("press any key to continue...")
+            
+            pause = input("press any key to continue...")
 
             # 启动更新路径的线程
             map_thread = map_Thread(target=self.__thread_update_map, args=(lmp_env, action_state, state_manager))
