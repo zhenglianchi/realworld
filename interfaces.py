@@ -218,7 +218,6 @@ class LMP_interface():
 
             obj_points = self.filter_largest_cluster(obj_points, eps=0.01, min_samples=10)
 
-            end_time = time.time()
             obs = self.get_obs(obj_points, label)
             state[label] = obs
 
