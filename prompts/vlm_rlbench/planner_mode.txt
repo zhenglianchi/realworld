@@ -45,3 +45,7 @@
 # Objects : ['airpods', 'drawer handle']
 # Query: Open the drawer slowly.
 # planner : ["grasp the drawer handle", "move away from the drawer handle by 25cm", "open gripper", "reset to default pose"]
+
+# Objects : ['red button', 'green button', 'blue button']
+# Query: press the red button.
+# planner : ["close the gripper", "move to the red button 2cm below z-max", "reset to default pose"]

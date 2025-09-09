@@ -303,5 +303,65 @@ Examples:
             "set": "rotation_map[:, :, :] = target_rotation"
         }
     },
+    {
+        "Objects": ['red button', 'green button', 'blue button'],
+        "Query": "press the green button.",
+        "Planner": [
+            "close the gripper", 
+            "move to the green button 2cm below z-max", 
+            "reset to default pose"
+        ],
+        "Action": "close the gripper",
+        "movable": "gripper",
+        "affordable": {
+            "observe": "Releasing the object does not require new affordance, so default is used.",
+            "set": "default"
+        },
+        "avoid": {
+            "observe": "No special obstacle processing is required when opening the gripper, so default avoidance is used.",
+            "set": "default"
+        },
+        "gripper": {
+            "observe": "Opening the gripper is represented by setting all voxels of the gripper map to 0.",
+            "set": "gripper_map[:, :, :] = 1"
+        },
+        "rotation": {
+            "observe": "Releasing the steak does not require orientation change, so rotation remains default.",
+            "set": "default"
+        }
+    },
+    {
+        "Objects": ['red button', 'green button', 'blue button'],
+        "Query": "press the green button.",
+        "Planner": [
+            "close the gripper", 
+            "move to the green button 2cm below z-max", 
+            "reset to default pose"
+        ],
+        "Action": "move to the green button 2cm below z-max",
+        "movable": "gripper",
+        "affordable": {
+            "observe": "To press the button, the end of the robotic arm needs to be 2 cm below its highest surface.",
+            "object": "green button",
+            "center_x, center_y, center_z": "object['position']",
+            "x": "center_x",
+            "y": "center_y",
+            "z": "center_z - cm2index(2, 'z')",
+            "target_affordance": 1,
+            "set": "affordance_map[x, y, z] = target_affordance"
+        },
+        "avoid": {
+            "observe": "No special obstacle processing is required when opening the gripper, so default avoidance is used.",
+            "set": "default"
+        },
+        "gripper": {
+            "observe": "The gripper state does not change during the pull, so default is applied.",
+            "set": "default"
+        },
+        "rotation": {
+            "observe": "Releasing the steak does not require orientation change, so rotation remains default.",
+            "set": "default"
+        }
+    },
 ]
 
