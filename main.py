@@ -19,14 +19,14 @@ voxel_visualizer = VoxelSceneVisualizer(
     save_dir = config['visualizer'].save_dir
 )
 
-init_pose = np.array([   -0.29255,    -0.16637   ,   0.35149,      2.9967 ,   -0.76839 ,   0.040215])
+init_pose = np.array([   -0.29255,    -0.16637   ,   0.35149,      0.9136 ,   -3.00 ,   0.0874])
 
 ur5 = UR_BASE("192.168.111.10",fisrt_tcp=init_pose)
 time.sleep(5)
 
 voxposer_ui, lmp_env = setup_LMP(config,ur5)
 
-instruction = "grasp the brown tape to place the white-black marker."
+instruction = "Flower arranging task. Please insert the flower into the vase."
 
 finished_event = threading.Event()
 condition = threading.Condition()

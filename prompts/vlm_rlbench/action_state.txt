@@ -16,6 +16,19 @@ Function Descriptions:
     Function rotate_pose_local_axis(rotvec, axis='x', angle_deg=30, degrees=False): Rotates a rotation vector around a specified local coordinate axis (‘x’, ‘y’, or ‘z’) by a given angle; the rotation is applied in the local frame of the current orientation, using axis-angle representation. 
 
 
+# Initial End-Effector Pose (Local Frame):
+- The end-effector’s local Z-axis points vertically downward (toward the ground).
+- The local X-axis points forward (in the direction the gripper is facing).
+- The local Y-axis points to the left (completing the right-handed coordinate system: X forward, Y left, Z down).
+
+# Base Frame (World Coordinate System):
+- The base X-axis points to the right and slightly upward (diagonally forward-right in world space).
+- The base Y-axis points to the left and slightly upward (diagonally forward-left in world space).
+- The base Z-axis points vertically upward (perpendicular to the ground, opposing gravity).
+
+Note: All rotations (e.g., via `rotate_pose_local_axis`) are applied in the **end-effector’s local frame**, not the base/world frame. For example, rotating around the local Y-axis will tilt the gripper sideways relative to its own forward direction, regardless of global orientation.
+
+
 Examples:
 [
     {
@@ -97,109 +110,6 @@ Examples:
         },
         "rotation": {
             "observe": "The move action does not require changing orientation, so rotation remains default.",
-            "set": "default"
-        }
-    },
-    {
-        "Objects": ["blue block", "yellow block", "mug"],
-        "Query": "place the blue block on the yellow block, and avoid the mug at all time.",
-        "Planner": [
-            "grasp the blue block while keeping at least 2cm away from the mug",
-            "move to 5cm on top of the yellow block while keeping at least 2cm away from the mug",
-            "open gripper"
-        ],
-        "Action": "open gripper",
-        "movable": "gripper",
-        "affordable": {
-            "observe": "Releasing the object does not require new affordance, so default is used.",
-            "set": "default"
-        },
-        "avoid": {
-            "observe": "No special obstacle processing is required when opening the gripper, so default avoidance is used.",
-            "set": "default"
-        },
-        "gripper": {
-            "observe": "Opening the gripper is represented by setting all voxels of the gripper map to 0.",
-            "set": "gripper_map[:, :, :] = 0"
-        },
-        "rotation": {
-            "observe": "Releasing the block does not require orientation change, so rotation remains default.",
-            "set": "default"
-        }
-    },
-    {
-        "Objects": ["steak", "grill", "plate"],
-        "Query": "Take the steak out of the grill and put it flat on the plate.",
-        "Planner": [
-            "grasp the steak",
-            "move to 10cm on top of the plate",
-            "rotate the gripper to be 45 degrees slanted relative to the plate",
-            "open gripper"
-        ],
-        "Action": "grasp the steak",
-        "movable": "gripper",
-        "affordable": {
-            "observe": "The steak is the target to grasp, so its center position is set as affordance.",
-            "object": "steak",
-            "center_x, center_y, center_z": "object['position']",
-            "x": "center_x",
-            "y": "center_y",
-            "z": "center_z",
-            "target_affordance": 1,
-            "set": "affordance_map[x, y, z] = 1"
-        },
-        "avoid": {
-            "observe": "No obstacles are specified at this step, so avoidance is default.",
-            "set": "default"
-        },
-        "gripper": {
-            "observe": "The gripper must be positioned at the steak’s center with a 2cm radius clearance to grasp.",
-            "object": "steak",
-            "center_x, center_y, center_z": "object['position']",
-            "(min_x, min_y, min_z), (max_x, max_y, max_z)": "object['aabb']",
-            "x": "center_x",
-            "y": "center_y",
-            "z": "center_z",
-            "radius_cm": 5,
-            "value": 1,
-            "set": "set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)"
-        },
-        "rotation": {
-            "observe": "The steak can be grasped directly, no extra rotation is needed at this stage.",
-            "set": "default"
-        }
-    },
-    {
-        "Objects": ["steak", "grill", "plate"],
-        "Query": "Take the steak out of the grill and put it flat on the plate.",
-        "Planner": [
-            "grasp the steak",
-            "move to 10cm on top of the plate",
-            "rotate the gripper to be 45 degrees slanted relative to the plate",
-            "open gripper"
-        ],
-        "Action": "move to 10cm on top of the plate",
-        "movable": "gripper",
-        "affordable": {
-            "observe": "The target position is 10cm above the plate, so this location is set as affordance.",
-            "object": "plate",
-            "center_x, center_y, center_z": "object['position']",
-            "x": "center_x",
-            "y": "center_y",
-            "z": "center_z + cm2index(10, 'z')",
-            "target_affordance": 1,
-            "set": "affordance_map[x, y, z] = target_affordance"
-        },
-        "avoid": {
-            "observe": "No special obstacle needs to be avoided during this move, so default avoidance is used.",
-            "set": "default"
-        },
-        "gripper": {
-            "observe": "This step only moves the gripper without changing grip, so default gripper setting is applied.",
-            "set": "default"
-        },
-        "rotation": {
-            "observe": "The action is a translation only, so rotation remains default.",
             "set": "default"
         }
     },
@@ -393,40 +303,5 @@ Examples:
             "set": "rotation_map[:, :, :] = target_rotation"
         }
     },
-    {
-        "Objects": ["flower", "flower stem", "vase"],
-        "Query": "Insert the flower into the vase.",
-        "Planner": [
-            "grasp the flower stem",
-            "reset to default pose",
-            "move to 5cm on top of the vase",
-            "open gripper",
-            "reset to default pose"
-        ],
-        "Action": "move to 5cm on top of the vase",
-        "movable": "gripper",
-        "affordable": {
-            "observe": "The goal is to place the flower correctly above the vase opening, so the gripper must move to a position 5cm above the vase before lowering.",
-            "object": "vase",
-            "center_x, center_y, center_z": "object['position']",
-            "x": "center_x",
-            "y": "center_y",
-            "z": "center_z + cm2index(5, 'z')",
-            "target_affordance": 1,
-            "set": "affordance_map[x, y, z] = target_affordance"
-        },
-        "avoid": {
-            "observe": "No specific obstacles are defined in the scene, so no avoidance map changes are necessary.",
-            "set": "default"
-        },
-        "gripper": {
-            "observe": "The gripper is already holding the flower from the previous grasp action; no additional gripper configuration is required.",
-            "set": "default"
-        },
-        "rotation": {
-            "observe": "Since the end-effector can directly place the flower into the vase in its current orientation, no rotation is needed.",
-            "set": "default"
-        }
-    }
 ]
 

@@ -1,51 +1,47 @@
-# Objects : ['blue block', 'yellow block', 'mug']
-# Query: place the blue block on the yellow block, and avoid the mug at all time.
-# planner : ["grasp the blue block while keeping at least 15cm away from the mug", "reset to default pose", "move to 5cm on top of the yellow block while keeping at least 15cm away from the mug", "open gripper", "reset to default pose"]
+# Objects : ['mug', 'cup handle', 'table']
+# Query: Pick up the mug by its handle and place it on the table.
+# planner : ["grasp the cup handle", "move to 10cm above the table", "open gripper", "reset to default pose"]
 
-# Objects : ['airpods', 'drawer handle']
+# Objects : ['drawer', 'drawer handle']
 # Query: Open the drawer slowly.
 # planner : ["grasp the drawer handle", "move away from the drawer handle by 25cm", "open gripper", "reset to default pose"]
 
+# Objects : ['charger', 'charger plug', 'outlet']
+# Query: Unplug the charger from the wall.
+# planner : ["grasp the charger plug", "pull straight out 10cm from the outlet", "reset to default pose"]
+
+# Objects : ['beer bottle', 'beer cap']
+# Query: Close the beer bottle tightly.
+# planner : ["grasp the beer cap", "turn clockwise by 180 degrees", "push down gently by 1cm", "reset to default pose"]
+
+# Objects : ['lamp', 'switch']
+# Query: Turn off the lamp.
+# planner : ["move gripper to the center of the switch", "press the switch for 1 second", "move back 5cm", "reset to default pose"]
+
 # Objects : ['tissue box', 'tissue', 'bowl']
 # Query: Can you pass me a tissue and place it next to the bowl?
-# planner : ["grasp the tissue", "reset to default pose", "move to 10cm to the right of the bowl", "open gripper", "reset to default pose"]
+# planner : ["grasp the top edge of the tissue", "lift tissue 5cm out of the box", "move to 10cm to the right of the bowl", "open gripper gently", "reset to default pose"]
 
-# Objects : ['charger', 'outlet']
-# Query: unplug the charger from the wall.
-# planner : ["grasp the charger", "reset to default pose"]
-
-# Objects : ['grape', 'lemon', 'drill', 'router', 'bread', 'tray']
-# Query: put the sweeter fruit in the tray that contains the bread.
-# planner : ["grasp the grape", "reset to default pose", "move to the top of the tray that contains the bread", "open gripper", "reset to default pose"]
+# Objects : ['steak', 'grill', 'plate', 'hot zone']
+# Query: Take the steak out of the grill and put it flat on the plate.
+# planner : ["grasp the edge of the steak (avoid center to reduce heat exposure)", "lift 10cm vertically to clear grill", "rotate gripper to align steak flat relative to plate", "move to 10cm above plate center", "open gripper", "reset to default pose"]
 
 # Objects : ['orange', 'QR code', 'lemon', 'top drawer handle']
 # Query: put the sour fruit into the top drawer.
-# planner : ["grasp the top drawer handle", "move away from the top drawer handle by 25cm", "open gripper", "reset to default pose", "grasp the lemon", "reset to default pose", "move to 10cm on top of the top drawer", "open gripper", "reset to default pose"]
+# planner : ["grasp the top drawer handle", "move away from the top drawer handle by 25cm", "open gripper", "reset to default pose", "grasp the lemon by its side", "reset to default pose", "move to 10cm on top of the top drawer", "open gripper", "reset to default pose"]
 
 # Objects : ['fridge handle', 'hot soup']
 # Query: Open the fridge door and be careful around the hot soup.
 # planner : ["grasp the fridge handle and keep at least 15cm away from the hot soup", "move away from the fridge handle by 25cm and keep at least 15cm away from the hot soup", "open gripper", "reset to default pose"]
 
-# Objects : ['cyan bowl', 'yellow bowl', 'box', 'ice cream']
-# Query: move to the top of the cyan bowl.
-# planner : ["move to the top of the cyan bowl", "reset to default pose"]
+# Objects : ['blue block', 'yellow block', 'mug']
+# Query: place the blue block on the yellow block, and avoid the mug at all time.
+# planner : ["grasp the blue block while keeping at least 15cm away from the mug", "reset to default pose", "move to 5cm on top of the yellow block while keeping at least 15cm away from the mug", "open gripper", "reset to default pose"]
 
-# Objects : ['drawer handle', 'umbrella']
-# Query: close the drawer.
-# planner : ["push close the drawer handle by 25cm", "reset to default pose"]
+# Objects : ['grape', 'lemon', 'drill', 'router', 'bread', 'tray']
+# Query: put the sweeter fruit in the tray that contains the bread.
+# planner : ["grasp the grape by its top stem", "reset to default pose", "move to the top of the tray that contains the bread", "open gripper", "reset to default pose"]
 
-# Objects : ['plate', 'steak', 'fork', 'knife', 'spoon']
-# Query: Could you please set up the fork for the steak for me?
-# planner : ["grasp the fork", "reset to default pose", "move to 10cm to the right of the plate", "open gripper", "reset to default pose"]
-
-# Objects : ['lamp', 'switch']
-# Query: Turn off the lamp.
-# planner : ["close the gripper", "move to the center of the switch", "reset to default pose"]
-
-# Objects : ['beer cap']
-# Query: turn close the beer.
-# planner : ["grasp the beer cap", "turn clockwise by 180 degrees", "reset to default pose"]
-
-# Objects : ['steak', 'grill', 'plate']
-# Query: Take the steak out of the grill and put it flat on the plate.
-# planner : ["grasp the steak", "rotate the gripper to be 45 degrees slanted relative to the plate", "reset to default pose", "move to 10cm on top of the plate", "open gripper", "reset to default pose"]
+# Objects : ['airpods', 'drawer handle']
+# Query: Open the drawer slowly.
+# planner : ["grasp the drawer handle", "move away from the drawer handle by 25cm", "open gripper", "reset to default pose"]

@@ -6,7 +6,7 @@ from fast_planners import Fast_PathPlanner
 import time
 from scipy.ndimage import distance_transform_edt
 import open3d as o3d
-from VLM_demo import  write_state, get_world_bboxs_list,show_mask,process_visual_prompt,set_visual_prompt,predict_mask,encode_image,resize_bbox_to_original,smart_resize,get_response
+from VLM_demo import  write_state, get_world_bboxs_list,show_mask,show_box,process_visual_prompt,set_visual_prompt,predict_mask,encode_image,resize_bbox_to_original,smart_resize,get_response
 from PIL import Image
 from scipy.ndimage import binary_erosion
 import matplotlib.pyplot as plt
@@ -195,8 +195,8 @@ class LMP_interface():
             points.append(pcd_.reshape(-1, 3))
             h, w = mask.shape[-2:]
             show_mask(mask,plt.gca())
+            show_box(box, plt.gca())
             mask =  mask.reshape(h, w).reshape(-1)
-            mask = binary_erosion(mask)
             masks.append(mask)
 
             points, masks = np.array(points), np.array(masks)

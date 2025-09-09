@@ -49,7 +49,7 @@ def set_visual_prompt(source_image,prompts,classes):
 
 def predict_mask(target_image):
     input_image = torch.from_numpy(target_image).permute(2, 0, 1).unsqueeze(0).float().cuda() / 255.0
-    result = model.predict(input_image, save=False, conf=0.5, iou=0.05, verbose=False, imgsz=(480,640))
+    result = model.predict(input_image, save=False, conf=0.3, iou=0.05, verbose=False, imgsz=(480,640))
     if result[0].masks is None:
         return [], []
     masks = result[0].masks.data
@@ -178,7 +178,11 @@ def get_world_bboxs_list(image_path,instruction):
     {{"bbox": [x1, y1, x2, y2], "label": "cup handle"}},
     {{"bbox": [x1, y1, x2, y2], "label": "cup body"}},
     {{"bbox": [x1, y1, x2, y2], "label": "mouse"}},
-    {{"bbox": [x1, y1, x2, y2], "label": "cabinet door"}}
+    {{"bbox": [x1, y1, x2, y2], "label": "cabinet door"}},
+    {{"bbox": [x1, y1, x2, y2], "label": "teapot handle"}},
+    {{"bbox": [x1, y1, x2, y2], "label": "teapot body"}},
+    {{"bbox": [x1, y1, x2, y2], "label": "flower line foliage"}},
+    {{"bbox": [x1, y1, x2, y2], "label": "flower bloom"}},
     ]
     ```
     Ensure completeness and precision at the **part level**, respecting whether an object should be split or kept whole.
