@@ -1,0 +1,131 @@
+Action: grasp the flower stem.
+Q1: 
+What is the orientation of the gripper's opening when performing this motion?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Vertical (B) Horizontal (C) Default
+A1:
+(A)
+Explanation: It is observed that the flower stem is lying flat against the platform, so it can only be grasped vertically.
+Q2:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the Z-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A2:
+(A) 15
+Explanation: It is observed that, in the current orientation, the gripper’s two fingers would press against the flower stem if used to grasp vertically. Therefore, a 15-degree rotation is required.
+Q3:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the X-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A3:
+(B) 0
+Explanation: It is observed that, after the above adjustments, the task can now be successfully completed.
+Q4:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the Y-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A4:
+(B) 0
+Explanation: It is observed that, after the above adjustments, the task can now be successfully completed.
+
+
+Action: grasp the Cylinder.
+Q1: 
+What is the orientation of the gripper's opening when performing this motion?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Vertical (B) Horizontal (C) Default
+A1:
+(B)
+Explanation: It is observed that the cylinder is placed vertically relative to the ground. When grasping, it is typical to grip its side surface — therefore, a horizontal grasp is required.
+Q2:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the Z-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A2:
+(B) 0
+Explanation: It is observed that the gripper’s two fingers can close properly to grasp the target, so no additional rotation is needed to adjust the opening orientation.
+Q3:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the X-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A3:
+(B) 0
+Explanation: It is observed that, after the above adjustments, the task can now be successfully completed.
+Q4:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the Y-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A4:
+(B) 0
+Explanation: It is observed that, after the above adjustments, the task can now be successfully completed.
+
+
+Action: Tilt 45 degrees about the Y axis.
+Q1: 
+What is the orientation of the gripper's opening when performing this motion?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Vertical (B) Horizontal (C) Default
+A1:
+(C)
+Explanation: Only a tilt about the Y-axis is required, so default orientation.
+Q2:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the Z-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A2:
+(B) 0
+Explanation: Only a tilt about the Y-axis is required, so default orientation.
+Q3:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the X-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A3:
+(B) 0
+Explanation: Only a tilt about the Y-axis is required, so default orientation.
+Q4:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the Y-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A4:
+(A) 45
+Explanation: This task requires a 45-degree rotation about the Y-axis, so select option A and enter 45.
+
+Action: Tilt 45 degrees about the X axis.
+Q1: 
+What is the orientation of the gripper's opening when performing this motion?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Vertical (B) Horizontal (C) Default
+A1:
+(C)
+Explanation: Only a tilt about the X-axis is required, so default orientation.
+Q2:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the Z-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A2:
+(B) 0
+Explanation: Only a tilt about the X-axis is required, so default orientation.
+Q3:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the X-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A3:
+(A) 45
+Explanation: This task requires a 45-degree rotation about the x-axis, so select option A and enter 45.
+Q4:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the Y-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A4:
+(B) 0
+Explanation: Only a tilt about the X-axis is required, so default orientation.
+
+Action: Move to the top of the bin.
+Q1: 
+What is the orientation of the gripper's opening when performing this motion?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Vertical (B) Horizontal (C) Default
+A1:
+(C)
+Explanation: It is observed that, after the above adjustments, the task can now be successfully completed.
+Q2:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the Z-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A2:
+(B) 0
+Explanation: It is observed that, after the above adjustments, the task can now be successfully completed.
+Q3:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the X-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A3:
+(B) 0
+Explanation: It is observed that, after the above adjustments, the task can now be successfully completed.
+Q4:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the Y-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A4:
+(B) 0
+Explanation: It is observed that, after the above adjustments, the task can now be successfully completed.

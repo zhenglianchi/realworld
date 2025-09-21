@@ -100,6 +100,7 @@ class LMP:
         self._debug = debug
         self._planner_prompt = load_prompt(f"{env}/{self._cfg['planner_prompt_fname']}.txt")
         self._action_state_prompt = load_prompt(f"{env}/{self._cfg['vision_prompt_fname']}.txt")
+        self._rotation_prompt = load_prompt(f"{env}/{self._cfg['rotation_prompt_fname']}.txt")
 
         self._stop_tokens = [self._cfg['stop']]
         self._context = None
@@ -121,8 +122,6 @@ class LMP:
         self.movable_var = None
         self.affordable_map = None
         self.avoidance_map = None
-        self.rotation_map = None
-        self.velocity_map = None
         self.gripper_map = None
 
         self.move = False
@@ -136,8 +135,16 @@ class LMP:
             else:
                 time.sleep(1)
 
+    def get_response(self,messages):
+        client = OpenAI(api_key=self.api_key,base_url=self.base_url)
 
-    def generate_planning(self, query, lmp_env):
+        completion = client.chat.completions.create(
+            model=self._cfg['vision_model'], 
+            messages=messages
+        )
+        return completion
+
+    def generate_planning(self, query, lmp_env,image_share):
         self._context = lmp_env.objects
 
         user_query = f'{self._cfg["query_prefix"]}{query}{self._cfg["query_suffix"]}'
@@ -148,52 +155,124 @@ class LMP:
             user_query = f"# Objects : {self._context}\n" + user_query
 
         print(user_query)
-
-        client = OpenAI(api_key=self.api_key,base_url=self.base_url)
         
-        filepath = self.get_last_filename(self.mask_path)
-        base64_image = encode_image(filepath)
+        base64_image = image_share.get()
 
-        completion = client.chat.completions.create(
-            model=self._cfg['vision_model'],
-            messages=[{"role": "user","content": [
+        messages=[{"role": "user","content": [
                 {"type": "text","text": f"This is a robotic arm operation scene image.\n{planner_prompt}\nThe above are some examples of planning, please give the corresponding planning according to the image I gave you next:\n{user_query}. The output format likely is\n" + "planner : ['', '', '', '']\nOther than that, don't give me any superfluous information and hints.The objects in the generated plan should match the names in the given image"},
                 {"type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}, 
                 }
-                ]}],
-        )
+                ]}]
 
-        planner = completion.choices[0].message.content
+        result = self.get_response(messages)
+
+        planner = result.choices[0].message.content
 
         planning = json.loads(planner.split(":")[-1].strip())
 
         return planning
+    
+    def rotation_generate(self, action,lmp_env, image_share):
+        base64_image = image_share.get()
+        axis = ["z","x","y"]
 
-    def _vlmapi_call(self,image_path, query, planner ,action, objects):
-        client = OpenAI(api_key=self.api_key,base_url=self.base_url)
+        messages = []
 
-        base64_image = encode_image(image_path)
+        Q=[
+            "What is the orientation of the gripper's opening when performing this motion?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.\n(A) Vertical (B) Horizontal (C) Default",
+            "Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the Z-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.\n(A) Yes (B) No (degrees)__",
+            "Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the X-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.\n(A) Yes (B) No (degrees)__",
+            "Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the Y-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.\n(A) Yes (B) No (degrees)__",
+        ]
+
+        prompt = f"{self._rotation_prompt}"
+        messages.append({"role": "user","content": [
+            {"type": "text",
+             "text": f"This is a robotic arm operation scene." + f"The format of output should be like {prompt}.\nAction: {action}\n"},
+            {"type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}, 
+            }
+            ]})
+        messages.append({"role": "assistant","content": [{"type": "text","text": "Understood, let's start the question and answer sequence."}]})
+            
+        
+        for i in range(len(Q)):
+            current_pos = lmp_env.ur5.get_tcp()[:3]
+            current_rotation = lmp_env.ur5.get_tcp()[3:]
+            base64_image = image_share.get()
+            messages.append({
+                "role": "user","content": [
+                    {"type": "text","text": Q[i]},
+                    {"type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}, 
+                    }
+                    ]
+                             }
+                             )
+            tokens = self.get_response(messages).choices[0].message.content
+            answer = tokens.split("\n")[1].strip()
+            explanation = tokens.split("\n")[2]
+            print(Q[i])
+            print(tokens)
+            messages.append({"role": "assistant","content": [{"type": "text","text": tokens}]})
+
+            C = answer[1]
+
+            if i>0:
+                A = int(answer[3:])
+                if C == "A":
+                    target_rotation = rotate_pose_local_axis(target_rotation,axis[i-1],-A)
+                elif C == "B":
+                    target_rotation = current_rotation
+                else:
+                    print("Invalid choice")
+                    exit()
+            else:
+                if C == "A":
+                    target_rotation = current_rotation
+                elif C == "B":
+                    target_rotation = rotate_pose_local_axis(current_rotation,"y",-90)
+                    target_rotation = rotate_pose_local_axis(current_rotation,"z",-90)
+                elif C == "C":
+                    target_rotation = current_rotation
+                else:
+                    print("Invalid choice")
+                    exit()
+
+
+            next_pos = current_pos.tolist()+target_rotation.tolist()
+            print(next_pos)
+            #lmp_env.ur5.moveL(next_pos,speed=0.2,acc=0.1)
+            time.sleep(5)
+
+            
+
+
+    def _vlmapi_call(self, image_share,query, planner ,action, objects):
+
+        base64_image = image_share.get()
 
         prompt = self._action_state_prompt
 
         print(objects)
 
-        completion = client.chat.completions.create(
-            model=self._cfg['vision_model'],  
-            messages=[{"role": "user","content": [
-                    {"type": "text","text": f"This is a robotic arm operation scene." + f"The format of output should be like {prompt}.\n Objects : {objects}\nMoves : [grasp,move],\nQuery : {query}\nPlanner : {planner}\nAction : {action}\nPlease just give me the corresponding json, no explanation and no text required"},
-                    {"type": "image_url",
-                    "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}, 
-                    }
-                    ]}]
-            )
+        messages=[{"role": "user","content": [
+                {"type": "text","text": f"This is a robotic arm operation scene." + f"The format of output should be like {prompt}.\n Objects : {objects}\nMoves : [grasp,move],\nQuery : {query}\nPlanner : {planner}\nAction : {action}\nPlease just give me the corresponding json, no explanation and no text required"},
+                {"type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}, 
+                }
+                ]}]
 
-        resstr = completion.choices[0].message.content.replace("```","").replace("json","")
+        result = self.get_response(messages)
+
+        resstr = result.choices[0].message.content.replace("```","").replace("json","")
+
+        print(resstr)
 
         state = json.loads(resstr)
 
-        return state
+        return state[0]
 
 
 
@@ -266,25 +345,10 @@ class LMP:
             gripper_map = set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)
         return gripper_map
     
-    
-    def __get__rotation_map(self,action_state,lmp_env,object_state):
-        rotation_map = lmp_env._get_default_voxel_map('rotation')()
-        rotation = action_state["rotation"]
-        rotation_set = rotation["set"]
-        if rotation_set != "default" :
-            rotation_var = rotation["object"]
-            object = object_state[rotation_var]["obs"]
-            axis = rotation["axis"]
-            angle_deg = eval(rotation["angle_deg"])
-            current_rotation = eval(rotation["current_rotation"])
-            target_rotation = eval(rotation["target_rotation"])
-            rotation_map[:, :, :] = target_rotation
-        return rotation_map
-
 
     def get_map(self):
         with self.map_lock:
-            return self.movable_var, self.affordable_map, self.avoidance_map, self.rotation_map, self.gripper_map
+            return self.movable_var, self.affordable_map, self.avoidance_map, self.gripper_map
     
     def get_cost_map(self,lmp_env, affordable_map, avoidance_map):
         target_map = affordable_map
@@ -307,7 +371,6 @@ class LMP:
             #print(object_state)
             affordable_map = self.__get__affordable_map(action_state,lmp_env,object_state)
             if not self.wakeup_flag:
-                rotation_map = self.__get__rotation_map(action_state,lmp_env,object_state)
                 gripper_map = self.__get__gripper_map(action_state,lmp_env,object_state)
 
             avoidance_map = self.__get__avoidance_map(action_state,lmp_env,object_state)
@@ -321,7 +384,6 @@ class LMP:
                 self.movable_var = movable_var
                 self.affordable_map = affordable_map
                 self.avoidance_map = avoidance_map
-                self.rotation_map = rotation_map
                 self.gripper_map = gripper_map
                 update_count += 1
 
@@ -348,7 +410,7 @@ class LMP:
 
             start_time = time.time()
 
-            movable_var, affordance_map, avoidance_map, rotation_map, gripper_map = self.get_map()
+            movable_var, affordance_map, avoidance_map, gripper_map = self.get_map()
 
             start_pos = lmp_env.get_ee_pos().copy()  # 直接获取实时位置
             
@@ -366,16 +428,16 @@ class LMP:
     def __thread_execute_traj(self, lmp_env):
         first_exc = True
         while not self.exec_stop_event.is_set():
-            movable_var, affordable_map, avoidance_map, rotation_map, gripper_map = self.get_map()
+            movable_var, affordable_map, avoidance_map, gripper_map = self.get_map()
 
             curr_xyz = lmp_env.ur5.get_tcp()[:3]  # 直接获取实时位置
+            rotation = lmp_env.ur5.get_tcp()[3:]
             current_voxel_xyz = np.array(lmp_env._world_to_voxel(curr_xyz))
 
             if self.shared_queue.size() == 0:
                 if self.update_stop_event.is_set():
                     
                     gripper = gripper_map[current_voxel_xyz[0], current_voxel_xyz[1], current_voxel_xyz[2]]
-                    rotation = rotation_map[current_voxel_xyz[0], current_voxel_xyz[1], current_voxel_xyz[2]]
                 
                     waypoint = (curr_xyz, rotation, gripper)
                     # execute waypoint
@@ -390,12 +452,11 @@ class LMP:
             voxel_xyz = np.round(voxel_xyz).astype(int)
             
             gripper = gripper_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
-            rotation = rotation_map[current_voxel_xyz[0], current_voxel_xyz[1], current_voxel_xyz[2]]
         
             waypoint = (world_xyz, rotation, gripper)
 
             if first_exc:
-                time_sleep = 1.5
+                time_sleep = 3
                 first_exc = False
             else:
                 time_sleep = 0.35
@@ -423,8 +484,8 @@ class LMP:
                 break
 
 
-    def __call__(self, query, lmp_env, state_manager, voxel_visualizer):
-        planning = self.generate_planning(query,lmp_env)
+    def __call__(self, query, lmp_env, state_manager, voxel_visualizer, image_share):
+        planning = self.generate_planning(query,lmp_env,image_share)
         planning = list(filter(None, planning))
         print(planning)
         planning_ = planning.copy()
@@ -453,13 +514,14 @@ class LMP:
             
             # 如果没有缓存，则调用API获取动作状态
             if action_state is None:
-                filepath = self.get_last_filename(self.mask_path)
-                action_state  = self._vlmapi_call(filepath, query=query, planner=planning_, action=action, objects=self._context)
+                action_state  = self._vlmapi_call(image_share, query=query, planner=planning_, action=action, objects=self._context)
                 current_action = action_state["Action"]
                 with open(f"./cache/{current_action}.json", 'w', encoding='utf-8') as json_file:
                     json.dump(action_state, json_file)
 
             print(action_state)
+
+            self.rotation_generate(action,lmp_env,image_share)
             
             pause = input("press any key to continue...")
 
@@ -492,7 +554,7 @@ class LMP:
 
             if self.move:
                 print("正在生成可视化文件...")
-                movable_var, affordable_map, avoidance_map, rotation_map, gripper_map = self.get_map()
+                movable_var, affordable_map, avoidance_map, gripper_map = self.get_map()
                 costmap = self.get_cost_map(lmp_env, affordable_map, avoidance_map)
                 scenemap = lmp_env._get_scene_collision_voxel_map()
 
@@ -618,7 +680,7 @@ def set_voxel_by_radius(voxel_map, voxel_xyz, radius_cm=0, value=1):
       voxel_map[min_x:max_x, min_y:max_y, min_z:max_z] = value
     return voxel_map
 
-def rotate_pose_local_axis(rotvec_current, axis='x', angle_deg=30, degrees=False):
+def rotate_pose_local_axis(rotvec_current, axis='x', angle_deg=30, degrees=True):
     """
     在当前姿态基础上，绕自身的 X/Y/Z 轴（局部坐标系）进行旋转，返回新的轴角表示。
 

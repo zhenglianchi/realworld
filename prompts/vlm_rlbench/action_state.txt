@@ -16,14 +16,9 @@ Function Descriptions:
     Function rotate_pose_local_axis(rotvec, axis='x', angle_deg=30, degrees=False): Rotates a rotation vector around a specified local coordinate axis (‘x’, ‘y’, or ‘z’) by a given angle; the rotation is applied in the local frame of the current orientation, using axis-angle representation. 
 
 
-# Initial End-Effector Pose (Local Frame):
-- The end-effector’s local Z-axis points vertically downward (toward the ground).
-- The local X-axis points forward (in the direction the gripper is facing).
-- The local Y-axis points to the left (completing the right-handed coordinate system: X forward, Y left, Z down).
-
-# Base Frame (World Coordinate System):
-- The base X-axis points to the right and slightly upward (diagonally forward-right in world space).
-- The base Y-axis points to the left and slightly upward (diagonally forward-left in world space).
+# World(Base) Frame (World Coordinate System):
+- The base X-axis points horizontally to the right (parallel to the ground). 
+- The base Y-axis points horizontally forward (parallel to the ground, in the direction the observer is facing).  
 - The base Z-axis points vertically upward (perpendicular to the ground, opposing gravity).
 
 Note: All rotations (e.g., via `rotate_pose_local_axis`) are applied in the **end-effector’s local frame**, not the base/world frame. For example, rotating around the local Y-axis will tilt the gripper sideways relative to its own forward direction, regardless of global orientation.
@@ -67,10 +62,6 @@ Examples:
             "value": 1,
             "set": "set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)"
         },
-        "rotation": {
-            "observe": "Since the blue block can be grasped directly in the current configuration, no rotation of the end-effector is required.",
-            "set": "default"
-        }
     },
     {
         "Objects": ["blue block", "yellow block", "mug"],
@@ -108,10 +99,6 @@ Examples:
             "observe": "This step only requires moving the gripper, so the default gripper setting is used.",
             "set": "default"
         },
-        "rotation": {
-            "observe": "The move action does not require changing orientation, so rotation remains default.",
-            "set": "default"
-        }
     },
     {
         "Objects": ["steak", "grill", "plate"],
@@ -136,15 +123,6 @@ Examples:
             "observe": "The gripper state does not change while rotating, so default is used.",
             "set": "default"
         },
-        "rotation": {
-            "observe": "Rotating the gripper 45° relative to the plate corresponds to rotating 45° around the local x-axis.",
-            "object": "gripper",
-            "axis": "x",
-            "angle_deg": "np.pi/4",
-            "current_rotation": "object['rotation']",
-            "target_rotation": "rotate_pose_local_axis(current_rotation, axis, angle_deg)",
-            "set": "rotation_map[:, :, :] = target_rotation"
-        }
     },
     {
         "Objects": ["steak", "grill", "plate"],
@@ -169,10 +147,6 @@ Examples:
             "observe": "Opening the gripper is represented by setting all voxels of the gripper map to 0.",
             "set": "gripper_map[:, :, :] = 0"
         },
-        "rotation": {
-            "observe": "Releasing the steak does not require orientation change, so rotation remains default.",
-            "set": "default"
-        }
     },
     {
         "Objects": ["drawer", "drawer handle"],
@@ -190,7 +164,7 @@ Examples:
             "object": "drawer handle",
             "center_x, center_y, center_z": "object['position']",
             "x": "center_x",
-            "y": "center_y + cm2index(-5, 'y')",
+            "y": "center_y",
             "z": "center_z",
             "target_affordance": 1,
             "set": "affordance_map[x, y, z] = 1"
@@ -211,15 +185,6 @@ Examples:
             "value": 1,
             "set": "set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)"
         },
-        "rotation": {
-            "observe": "Grasping the handle requires the gripper to face it, which needs a 90° rotation around the local y-axis.",
-            "object": "gripper",
-            "axis": "y",
-            "angle_deg": "np.pi/2",
-            "current_rotation": "object['rotation']",
-            "target_rotation": "rotate_pose_local_axis(current_rotation, axis, angle_deg)",
-            "set": "rotation_map[:, :, :] = target_rotation"
-        }
     },
     {
         "Objects": ["drawer", "drawer handle"],
@@ -230,13 +195,13 @@ Examples:
             "open gripper",
             "reset to default pose"
         ],
-        "Action": "move 10cm to the left of the drawer handle",
+        "Action": "move 10cm to the right of the drawer handle",
         "movable": "gripper",
         "affordable": {
-            "observe": "The left side corresponds to -x direction in base frame, so 10cm left is set as affordance.",
+            "observe": "The right side corresponds to x direction in base frame, so 10cm left is set as affordance.",
             "object": "drawer handle",
             "center_x, center_y, center_z": "object['position']",
-            "x": "center_x + cm2index(-10, 'x')",
+            "x": "center_x + cm2index(10, 'x')",
             "y": "center_y",
             "z": "center_z",
             "target_affordance": 1,
@@ -250,10 +215,6 @@ Examples:
             "observe": "The gripper state does not change during the pull, so default is applied.",
             "set": "default"
         },
-        "rotation": {
-            "observe": "The pulling action only requires translation, so rotation remains default.",
-            "set": "default"
-        }
     },
     {
         "Objects": ["flower", "flower stem", "vase"],
@@ -293,15 +254,6 @@ Examples:
             "value": 1,
             "set": "set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)"
         },
-        "rotation": {
-            "observe": "Grasping the stem requires the gripper to face it, so rotation of 90° around the local x-axis is applied.",
-            "object": "gripper",
-            "axis": "x",
-            "angle_deg": "np.pi/2",
-            "current_rotation": "object['rotation']",
-            "target_rotation": "rotate_pose_local_axis(current_rotation, axis, angle_deg)",
-            "set": "rotation_map[:, :, :] = target_rotation"
-        }
     },
     {
         "Objects": ['red button', 'green button', 'blue button'],
@@ -325,10 +277,6 @@ Examples:
             "observe": "Opening the gripper is represented by setting all voxels of the gripper map to 0.",
             "set": "gripper_map[:, :, :] = 1"
         },
-        "rotation": {
-            "observe": "Releasing the steak does not require orientation change, so rotation remains default.",
-            "set": "default"
-        }
     },
     {
         "Objects": ['red button', 'green button', 'blue button'],
@@ -358,10 +306,39 @@ Examples:
             "observe": "The gripper state does not change during the pull, so default is applied.",
             "set": "default"
         },
-        "rotation": {
-            "observe": "Releasing the steak does not require orientation change, so rotation remains default.",
+    },
+    {
+        "Objects": ['drawer body', 'drawer handle', 'bowl'],
+        "Query": "Open the drawer and place the bowl.",
+        "Planner": [
+            "grasp the drawer handle",
+            "move to 10cm to the right of the drawer body", 
+            "open gripper", 
+            "grasp the bowl", 
+            "move to the 5cm left of the top of the drawer handle", 
+            "open gripper", 
+            "reset to default pose"
+            ],
+        "Action": "move to the 5cm left of the top of the drawer handle",
+        "movable": "gripper",
+        "affordable": {
+            "observe": "It was observed that the item placed in the drawer needs to be moved 5 centimeters to the left of the drawer handle.",
+            "object": "drawer handle",
+            "center_x, center_y, center_z": "object['position']",
+            "x": "center_x - cm2index(5, 'x')",
+            "y": "center_y",
+            "z": "center_z + cm2index(5, 'z')",
+            "target_affordance": 1,
+            "set": "affordance_map[x, y, z] = 1"
+        },
+        "avoid": {
+            "observe": "No obstacles are defined in this step, so default avoidance is used.",
             "set": "default"
-        }
+        },
+        "gripper": {
+            "observe": "This step only requires moving the gripper, so the default gripper setting is used.",
+            "set": "default"
+        },
     },
 ]
 

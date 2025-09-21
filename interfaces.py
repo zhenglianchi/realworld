@@ -6,7 +6,7 @@ from fast_planners import Fast_PathPlanner
 import time
 from scipy.ndimage import distance_transform_edt
 import open3d as o3d
-from VLM_demo import  write_state, get_world_bboxs_list,show_mask,show_box,process_visual_prompt,set_visual_prompt,predict_mask,encode_image,resize_bbox_to_original,smart_resize,get_response
+from VLM_demo import  show_box_cv2,show_mask_cv2,encode_image_PIL, get_world_bboxs_list,show_mask,show_box,process_visual_prompt,set_visual_prompt,predict_mask,encode_image,resize_bbox_to_original,smart_resize,get_response
 from PIL import Image
 from scipy.ndimage import binary_erosion
 import matplotlib.pyplot as plt
@@ -18,6 +18,8 @@ from scipy.spatial.transform import Rotation as R
 from camera import Camera
 from draw_axis import draw_axis
 from sklearn.cluster import DBSCAN
+import cv2
+import base64
 
 matplotlib.use('Agg')
 
@@ -154,15 +156,18 @@ class LMP_interface():
     return rgb, bbox
 
 
-  def update_mask_entities(self,instruction,finished_event,state_manager,condition):
+  def update_mask_entities(self,instruction,finished_event,state_manager,condition, image_share):
       if not os.path.exists("tmp/images"):
           os.makedirs("tmp/images")
       if not os.path.exists("tmp/masks"):
           os.makedirs("tmp/masks")
       
+      debug = True
       state = {}
       plt.figure(figsize=(20, 20))
       print("正在使用Qwen-VL生成目标框...........")
+      for i in range(60):
+          self.camera.get_aligned_images()
       frame, bbox_entities = self.qwen_vl_box(instruction)
       print(bbox_entities)
       print("正在处理yoloe视觉提示...........")
@@ -181,9 +186,6 @@ class LMP_interface():
 
         # 这里创建的点云，原点为相机坐标系中心
         pcd_ = self.camera.create_point_cloud_from_depth_image(meter_depth)
-
-        plt.clf()
-        plt.imshow(frame_draw)
         boxes, masks_ = predict_mask(frame)
 
         for (box_entity, mask) in zip(boxes, masks_):
@@ -194,8 +196,11 @@ class LMP_interface():
             
             points.append(pcd_.reshape(-1, 3))
             h, w = mask.shape[-2:]
-            show_mask(mask,plt.gca())
-            show_box(box, plt.gca())
+            #show_mask(mask,plt.gca())
+            #show_box(box, plt.gca())
+            # 用 OpenCV 绘制 mask 和 box
+            frame_draw = show_mask_cv2(mask, frame_draw)
+            frame_draw = show_box_cv2(box, frame_draw, label=label)
             mask =  mask.reshape(h, w).reshape(-1)
             masks.append(mask)
 
@@ -221,14 +226,6 @@ class LMP_interface():
             obs = self.get_obs(obj_points, label)
             state[label] = obs
 
-            x_min, y_min, x_max, y_max = box
-            center_x = (x_min + x_max) / 2
-            center_y = (y_min + y_max) / 2
-
-            # 在中心位置显示label
-            plt.text(center_x, center_y, label, color='white', ha='center', va='center', fontsize=12, weight='bold')
-
-
         state['gripper'] = self.get_ee_obs()
 
         state_manager.write_state(state)
@@ -237,10 +234,20 @@ class LMP_interface():
           condition.notify_all()
 
         end_time = time.time()  # 记录结束时间
-        print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated object state in {end_time - start_time:.3f}s{bcolors.ENDC}")
-        plt.axis('off')
-        plt.draw()
-        plt.savefig(f"tmp/masks/mask_latest.jpeg", bbox_inches='tight', pad_inches=0)
+        #print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated object state in {end_time - start_time:.3f}s{bcolors.ENDC}")
+        if debug:
+          # 转为 PIL Image
+          pil_img = Image.fromarray(frame_draw)
+          # 保存为 JPEG/PNG（自动按 RGB 语义保存）
+          pil_img.save("tmp/masks/debug_cv2_output.jpg", quality=100)
+          #plt.savefig(f"tmp/masks/mask_latest.jpeg", bbox_inches='tight', pad_inches=0)
+          debug = False
+        frame_draw = cv2.cvtColor(frame_draw, cv2.COLOR_RGB2BGR)
+        _, buffer = cv2.imencode('.jpg', frame_draw, [cv2.IMWRITE_JPEG_QUALITY, 100])
+        image_base64 = base64.b64encode(buffer).decode('utf-8')
+        if not image_share.empty():
+          image_share.get()
+        image_share.put(image_base64)
 
 
   def get_ee_pos(self):

@@ -13,6 +13,8 @@ import sys
 import re
 from ultralytics import YOLOE
 from ultralytics.models.yolo.yoloe.predict_vp import YOLOEVPSegPredictor
+import io
+import cv2
 
 model = YOLOE("yoloe-11s-seg.pt").cuda()
 
@@ -51,6 +53,7 @@ def predict_mask(target_image):
     input_image = torch.from_numpy(target_image).permute(2, 0, 1).unsqueeze(0).float().cuda() / 255.0
     result = model.predict(input_image, save=False, conf=0.3, iou=0.05, verbose=False, imgsz=(480,640))
     if result[0].masks is None:
+        print("No mask detected!")
         return [], []
     masks = result[0].masks.data
     boxes = result[0].boxes.data
@@ -79,6 +82,19 @@ def read_state(state_json_path,lock):
 def encode_image(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode("utf-8")
+    
+def encode_image_PIL(plt):
+    # 创建一个内存中的字节流
+    buf = io.BytesIO()
+    # 将当前图像保存到内存字节流中，格式为 JPEG
+    plt.savefig(buf, format='jpeg', bbox_inches='tight', pad_inches=0)
+    # 获取字节数据
+    image_bytes = buf.getvalue()
+    # 关闭缓冲区
+    buf.close()
+    # 编码为 base64 字符串
+    image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+    return image_base64
 
 def resize_bbox_to_original(bbox_list, original_size, resized_size):
     # 获取原图和调整后图像的尺寸
@@ -171,6 +187,7 @@ def get_world_bboxs_list(image_path,instruction):
     4. Never return the full object if it has detectable components — **only return its parts**.
     5. If a part is occluded but still partially visible, include it with its visible bounding box.
     6. Output **only a list of dictionaries**, no additional text or explanation.
+    7. Not to detect the robot part of the arm, only the objects and parts associated with the instruction.
 
     ### Output Format:
     ```json
@@ -183,6 +200,8 @@ def get_world_bboxs_list(image_path,instruction):
     {{"bbox": [x1, y1, x2, y2], "label": "teapot body"}},
     {{"bbox": [x1, y1, x2, y2], "label": "flower line foliage"}},
     {{"bbox": [x1, y1, x2, y2], "label": "flower bloom"}},
+    {{"bbox": [x1, y1, x2, y2], "label": "drawer cup"}},
+    {{"bbox": [x1, y1, x2, y2], "label": "drawer body"}},
     ]
     ```
     Ensure completeness and precision at the **part level**, respecting whether an object should be split or kept whole.
@@ -190,7 +209,7 @@ def get_world_bboxs_list(image_path,instruction):
     '''
 
     completion = client.chat.completions.create(
-        model="qwen2.5-vl-72b-instruct", 
+        model="qwen-vl-max", 
         messages=[{"role": "user","content": [
                 {"type": "text","text": prompt},
                 {"type": "image_url",
@@ -236,3 +255,25 @@ def get_response(url,query):
         return response.json()
     else:
         print("Error:", response.status_code, response.text)
+
+def show_mask_cv2(mask, image, random_color=False):
+    if random_color:
+        color = np.random.randint(0, 256, 3, dtype=np.uint8)
+    else:
+        color = np.array([30, 144, 255], dtype=np.uint8)  # dodgerblue
+    h, w = mask.shape[-2:]
+    mask = mask.reshape(h, w, 1)
+    colored_mask = mask * color.reshape(1, 1, 3)
+    
+    # 叠加到原图
+    image[mask[:, :, 0] > 0] = (
+        image[mask[:, :, 0] > 0] * 0.5 + colored_mask[mask[:, :, 0] > 0] * 0.5
+    ).astype(np.uint8)
+    return image
+
+def show_box_cv2(box, image, label=None, color=(0, 0, 255), thickness=1):
+    x0, y0, x1, y1 = map(int, box)
+    cv2.rectangle(image, (x0, y0), (x1, y1), color, thickness)
+    if label:
+        cv2.putText(image, label, (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 1)
+    return image

@@ -37,9 +37,6 @@ class Camera:
         self.cy = self.color_intrin.ppy
         self.scale = 1000.0
 
-        for i in range(10):
-            self.get_aligned_images()
-
 
     def create_point_cloud_from_depth_image(self, depth):
         assert(depth.shape[0] == self.height and depth.shape[1] == self.width)

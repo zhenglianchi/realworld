@@ -19,10 +19,7 @@ class UR_BASE(object):
         #self.gripper.connect()
 
     def reset_to_default_pose(self):
-        xyz = self.init_pose[:3]
-        rxyz = self.get_tcp()[3:]
-        default_pose = np.concatenate((xyz, rxyz))
-        self.servoL(default_pose, time=2)
+        self.servoL(self.init_pose, time=2)
 
     def set_digital_out(self, num, bool):
         self.rob.set_digital_out(num, bool)

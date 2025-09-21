@@ -155,14 +155,14 @@ def draw_axis(camera, ur5, frame_rgb):
     # 绘制 End-effector：真实投影
     frame_draw = draw_axis_on_image(
         frame_draw, K, R_cam_tcp, t_cam_tcp,
-        axis_length=0.07, label="End-effector",label_scale=0.5
+        axis_length=0.1, label="gripper",label_scale=0.3
     )
 
-    # 绘制 Base：固定在左下角
+    '''# 绘制 Base：固定在左下角
     frame_draw = draw_fixed_base_axis(
         frame_draw, K, R_cam_base,
         axis_length=0.07,           # 更短
         label_scale=0.5             # 小字体
-    )
+    )'''
 
     return frame_draw
