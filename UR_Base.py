@@ -16,7 +16,7 @@ class UR_BASE(object):
             self.init_pose = fisrt_tcp
             self.moveL(fisrt_tcp,speed=0.1,acc=0.05)
         self.gripper = OmniPicker_Interface()
-        #self.gripper.connect()
+        self.gripper.connect()
 
     def reset_to_default_pose(self):
         self.servoL(self.init_pose, time=2)
@@ -104,21 +104,21 @@ class UR_BASE(object):
 
     def execute(self, waypoint, time_sleep):
         x,y,z,rx,ry,rz = waypoint[0][0], waypoint[0][1], waypoint[0][2], waypoint[1][0], waypoint[1][1], waypoint[1][2]
-        if x>self.workspace_bounds_max[0] or x<self.workspace_bounds_min[0] or y>self.workspace_bounds_max[1] or y<self.workspace_bounds_min[1] or z>self.workspace_bounds_max[2] or z<self.workspace_bounds_min[2]:
+        if x>0.35 or x<-0.25 or y>-0.15 or y<-0.63 or z>0.6 or z<0.02:
             print("超出工作区范围")
             return False
 
         gripper = int(waypoint[2])
         target_pose = np.array([x, y, z, rx, ry, rz])
-        #self.servoL(target_pose,time=time_sleep)
+        self.servoL(target_pose,time=time_sleep)
         gripper_state = self.get_gripper_state()
         # 0->1 闭合
         # 1->0 张开
-        '''print(gripper_state, gripper)
+        print(gripper_state, gripper)
         if gripper_state == 0 and gripper == 1:
             self.gripper.gripper_close()
         elif gripper_state == 1 and gripper == 0:
-            self.gripper.gripper_open()'''
+            self.gripper.gripper_open()
         
         return True
 

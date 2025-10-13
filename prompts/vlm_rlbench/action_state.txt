@@ -58,7 +58,7 @@ Examples:
             "x": "center_x",
             "y": "center_y",
             "z": "center_z",
-            "radius_cm": 5,
+            "radius_cm": 3.5,
             "value": 1,
             "set": "set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)"
         },
@@ -77,21 +77,22 @@ Examples:
             "observe": "The target point is 5cm above the yellow block, so that location is marked as affordance.",
             "object": "yellow_block",
             "center_x, center_y, center_z": "object['position']",
+            "(min_x, min_y, min_z), (max_x, max_y, max_z)": "object['aabb']",
             "x": "center_x",
             "y": "center_y",
-            "z": "center_z + cm2index(5, 'z')",
+            "z": "max_z + cm2index(5, 'z')",
             "target_affordance": 1,
             "set": "affordance_map[x, y, z] = target_affordance"
         },
         "avoid": {
-            "observe": "The mug must always be avoided with at least a 2cm safety radius, so it is written into the avoidance map.",
-            "object": "mug",
+            "observe": "The mug must always be avoided with at least a 10cm safety radius, so it is written into the avoidance map.",
+            "object": "['mug']",
             "center_x, center_y, center_z": "object['position']",
             "(min_x, min_y, min_z), (max_x, max_y, max_z)": "object['aabb']",
             "x": "center_x",
             "y": "center_y",
             "z": "center_z",
-            "radius_cm": 2,
+            "radius_cm": 10,
             "value": 1,
             "set": "set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)"
         },
@@ -153,7 +154,7 @@ Examples:
         "Query": "Open the drawer by pulling the handle.",
         "Planner": [
             "grasp the drawer handle",
-            "move 10cm to the left of the drawer handle",
+            "move 10cm to the right of the drawer handle",
             "open gripper",
             "reset to default pose"
         ],
@@ -181,7 +182,7 @@ Examples:
             "x": "center_x",
             "y": "center_y",
             "z": "center_z",
-            "radius_cm": 5,
+            "radius_cm": 3.5
             "value": 1,
             "set": "set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)"
         },
@@ -191,17 +192,17 @@ Examples:
         "Query": "Open the drawer by pulling the handle.",
         "Planner": [
             "grasp the drawer handle",
-            "move 10cm to the left of the drawer handle",
+            "gripper moves 10 cm to the right",
             "open gripper",
             "reset to default pose"
         ],
-        "Action": "move 10cm to the right of the drawer handle",
+        "Action": "gripper moves 10 cm to the right",
         "movable": "gripper",
         "affordable": {
-            "observe": "The right side corresponds to x direction in base frame, so 10cm left is set as affordance.",
-            "object": "drawer handle",
+            "observe": "The right side corresponds to x direction in base frame, so 10cm right is set as affordance.",
+            "object": "gripper",
             "center_x, center_y, center_z": "object['position']",
-            "x": "center_x + cm2index(10, 'x')",
+            "x": "max_x + cm2index(10, 'x')",
             "y": "center_y",
             "z": "center_z",
             "target_affordance": 1,
@@ -222,7 +223,8 @@ Examples:
         "Planner": [
             "grasp the flower stem",
             "reset to default pose",
-            "move to 5cm on top of the vase",
+            "move to 10cm on top of the vase",
+            "gripper moves vertically down 5 cm",
             "open gripper",
             "reset to default pose"
         ],
@@ -239,8 +241,16 @@ Examples:
             "set": "affordance_map[x, y, z] = 1"
         },
         "avoid": {
-            "observe": "No obstacles are specified in this step, so default avoidance is used.",
-            "set": "default"
+            "observe": "The vase must always be avoided with at least a 10cm safety radius, so it is written into the avoidance map.",
+            "object": "['vase']",
+            "center_x, center_y, center_z": "object['position']",
+            "(min_x, min_y, min_z), (max_x, max_y, max_z)": "object['aabb']",
+            "x": "center_x",
+            "y": "center_y",
+            "z": "center_z",
+            "radius_cm": 10,
+            "value": 1,
+            "set": "set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)"
         },
         "gripper": {
             "observe": "To grasp the flower stem, the gripper will close within a 5cm radius around its center.",
@@ -250,9 +260,41 @@ Examples:
             "x": "center_x",
             "y": "center_y",
             "z": "center_z",
-            "radius_cm": 5,
+            "radius_cm": 3.5
             "value": 1,
             "set": "set_voxel_by_radius(gripper_map, [x,y,z], radius_cm, value)"
+        },
+    },
+    {
+        "Objects": ["flower", "flower stem", "vase"],
+        "Query": "Insert the flower into the vase.",
+        "Planner": [
+            "grasp the flower stem",
+            "reset to default pose",
+            "move to 10cm on top of the vase",
+            "gripper moves vertically down 10 cm",
+            "open gripper",
+            "reset to default pose"
+        ],
+        "Action": "gripper moves vertically down 10 cm",
+        "movable": "gripper",
+        "affordable": {
+            "observe": "The gripper is moved down 5cm, so the center of the gripper is marked as affordance.",
+            "object": "gripper",
+            "center_x, center_y, center_z": "object['position']",
+            "x": "center_x",
+            "y": "center_y",
+            "z": "center_z - cm2index(10, 'z')",
+            "target_affordance": 1,
+            "set": "affordance_map[x, y, z] = 1"
+        },
+        "avoid": {
+            "observe": "No special obstacle processing is required when opening the gripper, so default avoidance is used.",
+            "set": "default"
+        },
+        "gripper": {
+            "observe": "The gripper state does not change during the pull, so default is applied.",
+            "set": "default"
         },
     },
     {
@@ -260,7 +302,7 @@ Examples:
         "Query": "press the green button.",
         "Planner": [
             "close the gripper", 
-            "move to the green button 2cm below z-max", 
+            "move to the green button z-max", 
             "reset to default pose"
         ],
         "Action": "close the gripper",
@@ -283,18 +325,19 @@ Examples:
         "Query": "press the green button.",
         "Planner": [
             "close the gripper", 
-            "move to the green button 2cm below z-max", 
+            "move to the green button z-max", 
             "reset to default pose"
         ],
-        "Action": "move to the green button 2cm below z-max",
+        "Action": "move to the green button 1cm below z-max",
         "movable": "gripper",
         "affordable": {
-            "observe": "To press the button, the end of the robotic arm needs to be 2 cm below its highest surface.",
+            "observe": "To press the button, the end of the robotic arm needs to be its highest surface.",
             "object": "green button",
             "center_x, center_y, center_z": "object['position']",
+            "(min_x, min_y, min_z), (max_x, max_y, max_z)": "object['aabb']",
             "x": "center_x",
             "y": "center_y",
-            "z": "center_z - cm2index(2, 'z')",
+            "z": "max_z",
             "target_affordance": 1,
             "set": "affordance_map[x, y, z] = target_affordance"
         },
@@ -312,7 +355,7 @@ Examples:
         "Query": "Open the drawer and place the bowl.",
         "Planner": [
             "grasp the drawer handle",
-            "move to 10cm to the right of the drawer body", 
+            "gripper moves 10 cm to the right",
             "open gripper", 
             "grasp the bowl", 
             "move to the 5cm left of the top of the drawer handle", 
@@ -334,6 +377,42 @@ Examples:
         "avoid": {
             "observe": "No obstacles are defined in this step, so default avoidance is used.",
             "set": "default"
+        },
+        "gripper": {
+            "observe": "This step only requires moving the gripper, so the default gripper setting is used.",
+            "set": "default"
+        },
+    },
+    {
+        "Objects": ["blue block", "yellow block", "mug"],
+        "Query": "grasp the yellow block, and avoid the mug and the blue block at all time.",
+        "Planner": [
+            "grasp the yellow block while keeping at least 2cm away from the mug and the blue block",
+            "reset to default pose"
+        ],
+        "Action": "grasp the yellow block while keeping at least 2cm away from the mug and the blue block",
+        "movable": "gripper",
+        "affordable": {
+            "observe": "The target point is the yellow block, so that center location is marked as affordance.",
+            "object": "yellow_block",
+            "center_x, center_y, center_z": "object['position']",
+            "x": "center_x",
+            "y": "center_y",
+            "z": "center_z",
+            "target_affordance": 1,
+            "set": "affordance_map[x, y, z] = target_affordance"
+        },
+        "avoid": {
+            "observe": "The mug and blue block must always be avoided with at least a 10cm safety radius, so it is written into the avoidance map.",
+            "object": "['mug','blue block']",
+            "center_x, center_y, center_z": "object['position']",
+            "(min_x, min_y, min_z), (max_x, max_y, max_z)": "object['aabb']",
+            "x": "center_x",
+            "y": "center_y",
+            "z": "center_z",
+            "radius_cm": 10,
+            "value": 1,
+            "set": "set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)"
         },
         "gripper": {
             "observe": "This step only requires moving the gripper, so the default gripper setting is used.",

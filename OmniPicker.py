@@ -1,4 +1,5 @@
 import serial
+import time
 '''
 设置UR5 TCP位置将夹爪末端设置为TCP
 '''
@@ -127,7 +128,7 @@ class OmniPicker_Interface:
             0x00,     # 6  Frame data 1       CAN sends  data 1
             0x00,     # 7  Frame data 2       CAN sends  data 2
             0xFF,     # 8  Frame data 3       CAN sends  data 3
-            0x7F,     # 9  Frame data 4       CAN sends  data 4
+            0x48,     # 9  Frame data 4       CAN sends  data 4
             0x7F,     # 10 Frame data 5       CAN sends  data 5
             0x7F,     # 11 Frame data 6       CAN sends  data 6
             0x00,     # 12 Frame data 7       CAN sends  data 7
@@ -172,3 +173,10 @@ class OmniPicker_Interface:
         self.ser.write(send_can_id_data)
 
 
+
+if __name__ == '__main__':
+    omni_picker = OmniPicker_Interface()
+    omni_picker.connect()
+    time.sleep(5)
+    omni_picker.gripper_close()
+    time.sleep(5)

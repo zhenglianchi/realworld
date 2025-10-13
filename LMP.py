@@ -222,29 +222,31 @@ class LMP:
             if i>0:
                 A = int(answer[3:])
                 if C == "A":
-                    target_rotation = rotate_pose_local_axis(target_rotation,axis[i-1],-A)
+                    if i == 2 or i == 1:
+                        target_rotation = rotate_pose_local_axis(target_rotation,axis[i-1],A)
+                    elif i == 3:
+                        target_rotation = rotate_pose_local_axis(target_rotation,axis[i-1],-A)
                 elif C == "B":
                     target_rotation = current_rotation
                 else:
                     print("Invalid choice")
                     exit()
             else:
-                if C == "A":
+                if C == "A" or C == "C":
+                    # 如果是A则恢复到初始位姿
                     target_rotation = current_rotation
                 elif C == "B":
-                    target_rotation = rotate_pose_local_axis(current_rotation,"y",-90)
-                    target_rotation = rotate_pose_local_axis(current_rotation,"z",-90)
-                elif C == "C":
-                    target_rotation = current_rotation
+                    target_rotation = rotate_pose_local_axis(current_rotation,'y',-90)
                 else:
                     print("Invalid choice")
                     exit()
 
 
-            next_pos = current_pos.tolist()+target_rotation.tolist()
-            print(next_pos)
-            #lmp_env.ur5.moveL(next_pos,speed=0.2,acc=0.1)
-            time.sleep(5)
+            next_pos = np.array(current_pos.tolist()+target_rotation.tolist())
+            pause = input("press any key to continue...")
+            #print(next_pos)
+            lmp_env.ur5.servoL(next_pos,time=4)
+            time.sleep(8)
 
             
 
@@ -303,21 +305,24 @@ class LMP:
         avoidance = action_state["avoid"]
         avoidance_set = avoidance["set"]
         if avoidance_set != "default" :
-            avoidance_var = action_state["avoid"]["object"]
-            if avoidance_var not in object_state.keys():
-                print(f"Object {avoidance_var} not found in scene in this step.")
-                pass
-            object = object_state[avoidance_var]["obs"]
-            if "center_x, center_y, center_z" in avoidance.keys():
-                center_x, center_y, center_z = eval(avoidance["center_x, center_y, center_z"])
-            if "(min_x, min_y, min_z), (max_x, max_y, max_z)" in avoidance.keys():
-                (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(avoidance["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
-            x = eval(avoidance["x"])
-            y = eval(avoidance["y"])
-            z = eval(avoidance["z"])
-            radius_cm = avoidance["radius_cm"]
-            value = avoidance["value"]
-            avoidance_map = set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)
+            avoidance_vars = action_state["avoid"]["object"]
+            avoidance_vars = eval(avoidance_vars)
+
+            for avoidance_var in avoidance_vars:
+                if avoidance_var not in object_state.keys():
+                    print(f"Object {avoidance_var} not found in scene in this step.")
+                    pass
+                object = object_state[avoidance_var]["obs"]
+                if "center_x, center_y, center_z" in avoidance.keys():
+                    center_x, center_y, center_z = eval(avoidance["center_x, center_y, center_z"])
+                if "(min_x, min_y, min_z), (max_x, max_y, max_z)" in avoidance.keys():
+                    (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(avoidance["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
+                x = eval(avoidance["x"])
+                y = eval(avoidance["y"])
+                z = eval(avoidance["z"])
+                radius_cm = avoidance["radius_cm"]
+                value = avoidance["value"]
+                avoidance_map = set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)
         return np.array(avoidance_map)
     
     def __get__gripper_map(self,action_state,lmp_env,object_state):
@@ -426,26 +431,34 @@ class LMP:
 
 
     def __thread_execute_traj(self, lmp_env):
-        first_exc = True
+        num = 0
         while not self.exec_stop_event.is_set():
             movable_var, affordable_map, avoidance_map, gripper_map = self.get_map()
-
-            curr_xyz = lmp_env.ur5.get_tcp()[:3]  # 直接获取实时位置
-            rotation = lmp_env.ur5.get_tcp()[3:]
-            current_voxel_xyz = np.array(lmp_env._world_to_voxel(curr_xyz))
+            num += 1
+            if num <= 5:
+                time_sleep = 0.6
+            else:
+                time_sleep = 0.35
 
             if self.shared_queue.size() == 0:
                 if self.update_stop_event.is_set():
+                    curr_xyz = lmp_env.ur5.get_tcp()[:3]  # 直接获取实时位置
+                    rotation = lmp_env.ur5.get_tcp()[3:]
+                    current_voxel_xyz = np.array(lmp_env._world_to_voxel(curr_xyz))
                     
                     gripper = gripper_map[current_voxel_xyz[0], current_voxel_xyz[1], current_voxel_xyz[2]]
-                
+
                     waypoint = (curr_xyz, rotation, gripper)
                     # execute waypoint
-                    lmp_env.ur5.execute(waypoint)
+                    lmp_env.ur5.execute(waypoint, time_sleep)
                     self.exec_stop_event.set()
                     break
                 else:
                     continue
+
+            curr_xyz = lmp_env.ur5.get_tcp()[:3]  # 直接获取实时位置
+            rotation = lmp_env.ur5.get_tcp()[3:]
+            current_voxel_xyz = np.array(lmp_env._world_to_voxel(curr_xyz))
 
             voxel_xyz,queue_list = lmp_env.fast_planner.generate_fast_point_3d_vectorized(current_voxel_xyz, self.shared_queue, affordable_map, avoidance_map)
             world_xyz = lmp_env._voxel_to_world(voxel_xyz)
@@ -454,15 +467,10 @@ class LMP:
             gripper = gripper_map[voxel_xyz[0], voxel_xyz[1], voxel_xyz[2]]
         
             waypoint = (world_xyz, rotation, gripper)
-
-            if first_exc:
-                time_sleep = 3
-                first_exc = False
-            else:
-                time_sleep = 0.35
                 
             # execute waypoint
             signal = lmp_env.ur5.execute(waypoint, time_sleep)
+
             if not signal :
                 print(f"{bcolors.FAIL}[interfaces.py | {get_clock_time()}] Failed to execute waypoint{bcolors.ENDC}")
                 self.exec_stop_event.set()
@@ -476,7 +484,7 @@ class LMP:
 
             print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint: (wp: {waypoint[0].round(3)}, voxel: {voxel_xyz.round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {queue_list[-1].round(3)}, start: {current_voxel_xyz}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
 
-            # check if the movement is finished 5cm
+            # check if the movement is finished 5mm
             if dist2target <= 0.01 or self.shared_queue.size() == 0:
                 print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={curr_xyz}, target={queue_list[-1]} (distance: {dist2target:.3f})){bcolors.ENDC}")
                 self.exec_stop_event.set()
@@ -523,7 +531,7 @@ class LMP:
 
             self.rotation_generate(action,lmp_env,image_share)
             
-            pause = input("press any key to continue...")
+            #pause = input("press any key to continue...")
 
             # 启动更新路径的线程
             map_thread = map_Thread(target=self.__thread_update_map, args=(lmp_env, action_state, state_manager))

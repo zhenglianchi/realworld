@@ -24,6 +24,31 @@ A4:
 (B) 0
 Explanation: It is observed that, after the above adjustments, the task can now be successfully completed.
 
+Action: grasp the Cuboid.
+Q1: 
+What is the orientation of the gripper's opening when performing this motion?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Vertical (B) Horizontal (C) Default
+A1:
+(A)
+Explanation: It is observed that the Cuboid  can be directly grasped vertically.
+Q2:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the Z-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A2:
+(B) 0
+Explanation: It is observed that the gripper’s two fingers can close properly to grasp the target, so no additional rotation is needed to adjust the opening orientation.
+Q3:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the X-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A3:
+(B) 0
+Explanation: It is observed that, after the above adjustments, the task can now be successfully completed.
+Q4:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the Y-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A4:
+(B) 0
+Explanation: It is observed that, after the above adjustments, the task can now be successfully completed.
 
 Action: grasp the Cylinder.
 Q1: 
@@ -77,6 +102,32 @@ Can the current gripper opening direction performing this motion? If needed, rot
 A4:
 (A) 45
 Explanation: This task requires a 45-degree rotation about the Y-axis, so select option A and enter 45.
+
+Action: Close the gripper.
+Q1: 
+What is the orientation of the gripper's opening when performing this motion?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Vertical (B) Horizontal (C) Default
+A1:
+(C)
+Explanation: Only a gripper motion, so default orientation.
+Q2:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the Z-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A2:
+(B) 0
+Explanation: It is observed that, after the above adjustments, the task can now be successfully completed.
+Q3:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the X-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A3:
+(B) 0
+Explanation: It is observed that, after the above adjustments, the task can now be successfully completed.
+Q4:
+Can the current gripper opening direction performing this motion? If needed, rotate how many degrees around the Y-axis?Please determine whether rotation is necessary based on the representation of the gripper in the image and the coordinate system.
+(A) Yes (B) No (degrees)__
+A4:
+(B) 0
+Explanation: It is observed that, after the above adjustments, the task can now be successfully completed.
 
 Action: Tilt 45 degrees about the X axis.
 Q1: 

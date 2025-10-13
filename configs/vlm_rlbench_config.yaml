@@ -19,9 +19,9 @@ planner:
   map_size: 200
   
   fast_num_candidates: 30
-  fast_alpha: 1.0
+  fast_alpha: 2.0
   fast_beta: 1.0
-  avoid_weight: 5.0
+  avoid_weight: 3.0
   fast_radius: 5
 
 visualizer:

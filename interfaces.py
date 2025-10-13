@@ -173,7 +173,7 @@ class LMP_interface():
       print("正在处理yoloe视觉提示...........")
       visuals,objects,label2id,id2label = process_visual_prompt(bbox_entities)
       set_visual_prompt(frame, visuals, objects)
-      self.objects = objects
+      #self.objects = objects
       
       print("视觉预处理完成")
       
@@ -187,11 +187,13 @@ class LMP_interface():
         # 这里创建的点云，原点为相机坐标系中心
         pcd_ = self.camera.create_point_cloud_from_depth_image(meter_depth)
         boxes, masks_ = predict_mask(frame)
-
+        detect_objects = []
         for (box_entity, mask) in zip(boxes, masks_):
             id = int(box_entity[5])
             box = box_entity[:4]
             label = id2label[id]
+            detect_objects.append(label)
+
             points, masks = [], []
             
             points.append(pcd_.reshape(-1, 3))
@@ -229,7 +231,7 @@ class LMP_interface():
         state['gripper'] = self.get_ee_obs()
 
         state_manager.write_state(state)
-        
+        self.objects = detect_objects
         with condition:
           condition.notify_all()
 

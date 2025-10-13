@@ -20,7 +20,7 @@ voxel_visualizer = VoxelSceneVisualizer(
     save_dir = config['visualizer'].save_dir
 )
 
-init_pose = np.array([   0.135,    -0.2622   ,   0.500,      3.02 ,   -0.12 ,   0.02])
+init_pose = np.array([   0.236,    -0.2622   ,   0.351,      3.02 ,   -0.12 ,   0.02])
 
 ur5 = UR_BASE("192.168.111.10",fisrt_tcp=init_pose)
 time.sleep(5)
