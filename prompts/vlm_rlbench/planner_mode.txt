@@ -16,11 +16,15 @@
 
 # Objects : ['teapot handle', 'tea cup', 'teapot body']
 # Query: Pour tea into the tea cup.
-# planner : ["grasp the teapot handle", "reset to default pose", "move to the top of the tea cup", "Tilt 45 degrees about the X axis", "Move to a position 10 cm to the right of the teapot", "open gripper", "reset to default pose"]
+# planner : ["grasp the teapot handle", "reset to default pose", "move to the 15cm top of the tea cup", "Tilt 45 degrees about the X axis", "Move to a position 10 cm to the left of the tea cup", "gripper moves vertically down 10 cm", "open gripper", "reset to default pose"]
 
 # Objects : ['red button', 'green button', 'blue button']
 # Query: press the red button.
 # planner : ["close the gripper", "move to the red button z-max", "reset to default pose"]
+
+# Objects : ['Space debris', 'Other waste']
+# Query: grasp the Space debris and careful around the Other waste.
+# planner : ["grasp the Space debris and keep at least 20cm away from the Other waste", "reset to default pose"]
 
 # Objects : ['flower stem','flower bloom', 'glass cup']
 # Query: Insert the flower into the vase.
@@ -28,23 +32,19 @@
 
 # Objects : ['bottle cap','bottle body']
 # Query: Open the bottle cap.
-# planner : ["move to the top of the bottle cap", "close the gripper", "Tilt 45 degrees about the Z axis", "open gripper", "reset to default pose"]
+# planner : ["move to the top of the bottle cap", "close the gripper", "Tilt 135 degrees about the Z axis", "gripper moves vertically up 10 cm", "open gripper", "reset to default pose"]
 
 # Objects : ['vase', 'steak', 'tape']
 # Query: Recycle all object in scene.
-# planner : ["grasp the tape", "reset to default pose", "move to 10cm above the table and keep at least 10cm away from the vase.", "open gripper", "reset to default pose", "grasp the steak", "reset to default pose", "move to 10cm above the table and keep at least 10cm away from the vase.", "open gripper", "reset to default pose"]
+# planner : ["grasp the tape", "reset to default pose", "move to 15cm above the vase and keep at least 10cm away from the vase.", "open gripper", "reset to default pose", "grasp the steak", "reset to default pose", "move to 15cm above the vase and keep at least 10cm away from the vase.", "open gripper", "reset to default pose"]
 
 # Objects : ['steak', 'grill', 'plate', 'hot zone']
 # Query: Take the steak out of the grill and put it flat on the plate.
 # planner : ["grasp the edge of the steak", "lift 10cm vertically to clear grill", "rotate gripper to align steak flat relative to plate", "move to 10cm above plate center", "open gripper", "reset to default pose"]
 
-# Objects : ['fridge handle', 'hot soup']
-# Query: Open the fridge door and be careful around the hot soup.
-# planner : ["grasp the fridge handle and keep at least 15cm away from the hot soup", "move away from the fridge handle by 25cm and keep at least 15cm away from the hot soup", "open gripper", "reset to default pose"]
-
 # Objects : ['blue block', 'yellow block', 'mug']
 # Query: place the blue block on the yellow block, and avoid the mug at all time.
-# planner : ["grasp the blue block while keeping at least 15cm away from the mug", "reset to default pose", "move to 5cm on top of the yellow block while keeping at least 15cm away from the mug", "open gripper", "reset to default pose"]
+# planner : ["grasp the blue block and keep at least 15cm away from the mug", "reset to default pose", "move to 5cm on top of the yellow block and keep at least 15cm away from the mug", "open gripper", "reset to default pose"]
 
 # Objects : ['airpods', 'drawer handle']
 # Query: Open the drawer slowly.

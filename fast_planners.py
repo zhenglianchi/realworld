@@ -12,7 +12,7 @@ class Fast_PathPlanner:
     def generate_fast_point_3d_vectorized(self, current_pos, share_queue, affordable_map, avoidance_map):
         current_pos = np.array(current_pos, dtype=int)
         slow_points = np.array(share_queue.get_all().copy())
-        print(slow_points[:-5])
+        print(slow_points)
 
         # 1. 找到清除最近点后的最远的慢系统点作为引导方向
         distances = np.linalg.norm(slow_points - current_pos, axis=1)
@@ -29,12 +29,12 @@ class Fast_PathPlanner:
         if len(candidates_in_range) > 0:
             nearest_idx = np.argmax(distances_in_range)  # 最远点
             slow_target = candidates_in_range[nearest_idx].astype(int)
-            print(f"Using farthest in-range slow point: {slow_target}, distance: {distances_in_range[nearest_idx]:.2f}")
+            #print(f"Using farthest in-range slow point: {slow_target}, distance: {distances_in_range[nearest_idx]:.2f}")
         else:
             # 回退策略：如果没有点在范围内，使用下一个点作为引导方向
             nearest_idx = 0
             slow_target = slow_points[nearest_idx].astype(int)
-            print(f"No slow point in radius {self.radius}, using the next point: {slow_target}")
+            #print(f"No slow point in radius {self.radius}, using the next point: {slow_target}")
 
         for i in range(nearest_idx+1):
             share_queue.remove_front()
@@ -78,9 +78,11 @@ class Fast_PathPlanner:
                 valid_candidates = np.vstack([valid_candidates, slow_target])
                 #print(f"Added slow_target {slow_target} to candidates")
             else:
-                print(f"slow_target {slow_target} is out of bounds, not added")
+                #print(f"slow_target {slow_target} is out of bounds, not added")
+                pass
         else:
-            print(f"slow_target {slow_target} already in candidates")
+            #print(f"slow_target {slow_target} already in candidates")
+            pass
 
         if len(valid_candidates) == 0:
             print("No valid candidates after adding slow_target.")

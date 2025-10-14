@@ -241,14 +241,14 @@ Examples:
             "set": "affordance_map[x, y, z] = 1"
         },
         "avoid": {
-            "observe": "The vase must always be avoided with at least a 10cm safety radius, so it is written into the avoidance map.",
+            "observe": "The vase must always be avoided with at least a 15cm safety radius, so it is written into the avoidance map.",
             "object": "['vase']",
             "center_x, center_y, center_z": "object['position']",
             "(min_x, min_y, min_z), (max_x, max_y, max_z)": "object['aabb']",
             "x": "center_x",
             "y": "center_y",
             "z": "center_z",
-            "radius_cm": 10,
+            "radius_cm": 15,
             "value": 1,
             "set": "set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)"
         },
@@ -387,7 +387,7 @@ Examples:
         "Objects": ["blue block", "yellow block", "mug"],
         "Query": "grasp the yellow block, and avoid the mug and the blue block at all time.",
         "Planner": [
-            "grasp the yellow block while keeping at least 2cm away from the mug and the blue block",
+            "grasp the yellow block while keeping at least 15cm away from the mug and the blue block",
             "reset to default pose"
         ],
         "Action": "grasp the yellow block while keeping at least 2cm away from the mug and the blue block",
@@ -403,14 +403,14 @@ Examples:
             "set": "affordance_map[x, y, z] = target_affordance"
         },
         "avoid": {
-            "observe": "The mug and blue block must always be avoided with at least a 10cm safety radius, so it is written into the avoidance map.",
+            "observe": "The mug and blue block must always be avoided with at least a 15cm safety radius, so it is written into the avoidance map.",
             "object": "['mug','blue block']",
             "center_x, center_y, center_z": "object['position']",
             "(min_x, min_y, min_z), (max_x, max_y, max_z)": "object['aabb']",
             "x": "center_x",
             "y": "center_y",
             "z": "center_z",
-            "radius_cm": 10,
+            "radius_cm": 15,
             "value": 1,
             "set": "set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)"
         },

@@ -13,7 +13,6 @@ from Threads import Low_Execute_Thread,traj_Thread,map_Thread
 import threading
 import time
 from scipy.ndimage import gaussian_filter
-from scipy.ndimage import distance_transform_edt
 from utils import get_clock_time, normalize_map
 
 class SharedQueue:
@@ -221,10 +220,13 @@ class LMP:
 
             if i>0:
                 A = int(answer[3:])
+                if A>0:
+                    pause = input("press any key to continue...")
+
                 if C == "A":
-                    if i == 2 or i == 1:
+                    if i == 2:
                         target_rotation = rotate_pose_local_axis(target_rotation,axis[i-1],A)
-                    elif i == 3:
+                    elif i == 3 or i == 1:
                         target_rotation = rotate_pose_local_axis(target_rotation,axis[i-1],-A)
                 elif C == "B":
                     target_rotation = current_rotation
@@ -232,6 +234,7 @@ class LMP:
                     print("Invalid choice")
                     exit()
             else:
+                pause = input("press any key to continue...")
                 if C == "A" or C == "C":
                     # 如果是A则恢复到初始位姿
                     target_rotation = current_rotation
@@ -243,7 +246,6 @@ class LMP:
 
 
             next_pos = np.array(current_pos.tolist()+target_rotation.tolist())
-            pause = input("press any key to continue...")
             #print(next_pos)
             lmp_env.ur5.servoL(next_pos,time=4)
             time.sleep(8)
@@ -307,6 +309,8 @@ class LMP:
         if avoidance_set != "default" :
             avoidance_vars = action_state["avoid"]["object"]
             avoidance_vars = eval(avoidance_vars)
+            if not isinstance(avoidance_vars, list):
+                avoidance_vars = [avoidance_vars]
 
             for avoidance_var in avoidance_vars:
                 if avoidance_var not in object_state.keys():
@@ -371,7 +375,9 @@ class LMP:
         _resolution = lmp_env._resolution
         update_count = 0
         last_log_time = time.time()
+
         while not self.update_stop_event.is_set():
+            test1 = time.time()
             object_state = state_manager.get_state(blocking = True, timeout = 300.0)
             #print(object_state)
             affordable_map = self.__get__affordable_map(action_state,lmp_env,object_state)
@@ -379,12 +385,15 @@ class LMP:
                 gripper_map = self.__get__gripper_map(action_state,lmp_env,object_state)
 
             avoidance_map = self.__get__avoidance_map(action_state,lmp_env,object_state)
-
+            
             affordable_map = distance_transform_edt(1 - affordable_map)
             affordable_map = normalize_map(affordable_map)
 
             movable = action_state["movable"]
             movable_var = object_state[movable]["obs"]
+            test2 = time.time()
+            print("test:",test2-test1)
+
             with self.map_lock:
                 self.movable_var = movable_var
                 self.affordable_map = affordable_map
@@ -436,9 +445,9 @@ class LMP:
             movable_var, affordable_map, avoidance_map, gripper_map = self.get_map()
             num += 1
             if num <= 5:
-                time_sleep = 0.6
+                time_sleep = 0.7
             else:
-                time_sleep = 0.35
+                time_sleep = 0.5
 
             if self.shared_queue.size() == 0:
                 if self.update_stop_event.is_set():
@@ -492,7 +501,7 @@ class LMP:
                 break
 
 
-    def __call__(self, query, lmp_env, state_manager, voxel_visualizer, image_share):
+    def __call__(self, query, lmp_env, state_manager, voxel_visualizer, image_share, moving):
         planning = self.generate_planning(query,lmp_env,image_share)
         planning = list(filter(None, planning))
         print(planning)
@@ -508,6 +517,14 @@ class LMP:
             action = planning.pop(0)
             if action == "reset to default pose":
                 lmp_env.ur5.reset_to_default_pose()
+                time.sleep(5)
+                continue
+            if action == "close the gripper" or action == "close gripper":
+                lmp_env.ur5.gripper.gripper_close()
+                time.sleep(5)
+                continue
+            if action == "open the gripper" or action == "open gripper":
+                lmp_env.ur5.gripper.gripper_open()
                 time.sleep(5)
                 continue
 
@@ -529,9 +546,9 @@ class LMP:
 
             print(action_state)
 
-            self.rotation_generate(action,lmp_env,image_share)
-            
-            #pause = input("press any key to continue...")
+            if not moving:
+                self.rotation_generate(action,lmp_env,image_share)
+                pause = input("press any key to continue...")
 
             # 启动更新路径的线程
             map_thread = map_Thread(target=self.__thread_update_map, args=(lmp_env, action_state, state_manager))
