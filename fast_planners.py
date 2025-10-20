@@ -12,7 +12,7 @@ class Fast_PathPlanner:
     def generate_fast_point_3d_vectorized(self, current_pos, share_queue, affordable_map, avoidance_map):
         current_pos = np.array(current_pos, dtype=int)
         slow_points = np.array(share_queue.get_all().copy())
-        print(slow_points)
+        #print(slow_points)
 
         # 1. 找到清除最近点后的最远的慢系统点作为引导方向
         distances = np.linalg.norm(slow_points - current_pos, axis=1)
@@ -47,11 +47,11 @@ class Fast_PathPlanner:
         unit_dir = direction_vec / direction_norm
 
         # 🔁 新增：动态半径 = 当前到目标的距离（限制在 [1, 5]）
-        dynamic_radius = max(1, min(self.radius, int(np.ceil(direction_norm))))
+        #dynamic_radius = max(1, min(2, int(np.ceil(direction_norm))))
 
         # 2. 生成候选点（在 dynamic_radius 范围内）
-        r = dynamic_radius
-        offsets = np.random.randint(-r, r + 1, size=(self.num_candidates, 3))
+        r = 1
+        offsets = np.random.randint(-r, r+1, size=(self.num_candidates, 3))
         candidates = current_pos + offsets  # (N, 3)
 
         #print(f"dynamic_radius: {dynamic_radius}")

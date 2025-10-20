@@ -29,19 +29,18 @@ A.Problem Formulation
 | Tasks                       | ours |
 | --------------------------- | ---- |
 | Insert flower into vase     |      |
-| Pour tea                    |      |
 | Recycle all object in scene |      |
 | Open the drawer             |      |
 | Press the green button      |      |
 | Open the bottle cap         |      |
 |                             |      |
 
-| Tasks                                  | ours |
-| -------------------------------------- | ---- |
-| Moving Object                          |      |
-| Static Single Obstacle+Moving Object   |      |
-| Static Multiple Obstacle+Moving Object |      |
-| Moving Single Obstacle+Moving Object   |      |
-| Moving Multiple Obstacle+Moving Object |      |
-|                                        |      |
+| Tasks                                | ours |
+| ------------------------------------ | ---- |
+| Moving Object                        |      |
+| Static Single Obstacle+Static Object |      |
+| Static Double Obstacle+Static Object |      |
+| Moving Obstacle+Static Object        |      |
+| Moving Obstacle+Moving Object        |      |
+|                                      |      |
 

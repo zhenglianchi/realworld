@@ -22,14 +22,14 @@ voxel_visualizer = VoxelSceneVisualizer(
     save_dir = config['visualizer'].save_dir
 )
 
-init_pose = np.array([   0.135,    -0.2622   ,   0.45,      3.02 ,   -0.12 ,   0.02])
+init_pose = np.array([   0.432,    -0.169   ,   0.21,      3.02 ,   -0.12 ,   0.02])
 
 ur5 = UR_BASE("192.168.111.10",fisrt_tcp=init_pose)
 time.sleep(5)
 
 voxposer_ui, lmp_env = setup_LMP(config,ur5)
 
-instruction = "grasp the white cube and keep at least 10cm away from the vase."
+instruction = "only grasp the white cube and keep at least 10 cm away from the glass cup and the yellow foil."
 
 finished_event = threading.Event()
 condition = threading.Condition()

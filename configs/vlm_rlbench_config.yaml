@@ -4,33 +4,31 @@ planner:
   stop_threshold: 0.001
   savgol_polyorder: 3
   savgol_window_size: 7
-  obstacle_map_weight: 1
-  max_steps: 500
+  obstacle_map_weight: 2
+  max_steps: 200
   obstacle_map_gaussian_sigma: 10
-  target_map_weight: 2
+  target_map_weight: 1
   stop_criteria: no_nearby_equal
   target_spacing: 0.5
   max_curvature: 3
   pushing_skip_per_k: 5
   nearby_radius: 1
-  heuristic_weight: 1.0           # 启发式权重（通常为1.0）
-  max_astar_steps: 10000          # 防止无限搜索
 
-  map_size: 100
+  map_size: 200
   
-  fast_num_candidates: 30
-  fast_alpha: 2.0
-  fast_beta: 1.0
-  avoid_weight: 3.0
-  fast_radius: 3
+  fast_num_candidates: 50
+  fast_alpha: 10.0
+  fast_beta: 0.5
+  avoid_weight: 100.0
+  fast_radius: 2
 
 visualizer:
   save_dir: ./visualizations
-  map_size: 100
+  map_size: 200
 
 lmp_config:
   env:
-    map_size: 100
+    map_size: 200
     max_plan_iter: 1
     visualize: True
   lmps:

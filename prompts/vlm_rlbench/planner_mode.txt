@@ -24,7 +24,7 @@
 
 # Objects : ['Space debris', 'Other waste']
 # Query: grasp the Space debris and careful around the Other waste.
-# planner : ["grasp the Space debris and keep at least 20cm away from the Other waste", "reset to default pose"]
+# planner : ["grasp the Space debris and keep at least 20cm away from the Other waste"]
 
 # Objects : ['flower stem','flower bloom', 'glass cup']
 # Query: Insert the flower into the vase.

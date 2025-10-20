@@ -1,11 +1,8 @@
 """Greedy path planner."""
 import numpy as np
-from scipy.ndimage import gaussian_filter
-from scipy.ndimage import distance_transform_edt
 from scipy.signal import savgol_filter
-from utils import get_clock_time, normalize_map, calc_curvature
+from utils import calc_curvature
 import queue
-import threading
 
 class Slow_PathPlanner:
     """
@@ -106,5 +103,6 @@ class Slow_PathPlanner:
                     path_trimmed = path_trimmed[::skip_ratio]
         path = np.concatenate([path[0:1], path_trimmed, path[-1:]])
         path = path.clip(0, self.map_size-1).astype(int)
+        path = np.concatenate([path, np.tile(path[-1:], (10, 1))])
         path_voxel.put_all(path)
 

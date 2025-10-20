@@ -104,7 +104,7 @@ class UR_BASE(object):
 
     def execute(self, waypoint, time_sleep):
         x,y,z,rx,ry,rz = waypoint[0][0], waypoint[0][1], waypoint[0][2], waypoint[1][0], waypoint[1][1], waypoint[1][2]
-        if x>0.35 or x<-0.25 or y>-0.15 or y<-0.63 or z>0.6 or z<0.02:
+        if x>0.5 or x<-0.25 or y>0 or y<-0.7 or z>0.6 or z<0.02:
             print("超出工作区范围")
             return False
 

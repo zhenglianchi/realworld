@@ -15,12 +15,10 @@ class VoxelSceneVisualizer:
 
     def visualize(
         self,
-        scenemap,
         costmap,
         executed_path_voxel,
         filename="scene_path.html",
-        max_scene_points=1000,
-        max_costmap_points=1000,
+        max_costmap_points=5000,
         show_cost_text=True
     ):
         """
@@ -36,22 +34,7 @@ class VoxelSceneVisualizer:
         """
         fig = go.Figure()
 
-        # === 1. 可视化 scenemap（环境结构）
-        scene_indices = np.array(np.where(scenemap > 0)).T
-        if len(scene_indices) == 0:
-            print("[Visualizer] Warning: scenemap is empty.")
-        else:
-            if len(scene_indices) > max_scene_points:
-                scene_indices = scene_indices[np.random.choice(len(scene_indices), max_scene_points, replace=False)]
-
-            fig.add_trace(go.Scatter3d(
-                x=scene_indices[:, 0], y=scene_indices[:, 1], z=scene_indices[:, 2],
-                mode='markers',
-                marker=dict(size=2, color='gray', opacity=0.5),
-                name='Scene Structure'
-            ))
-
-        # === 2. 可视化 costmap（非零区域）
+        # === 1. 可视化 costmap（非零区域）
         cost_indices = np.array(np.where(costmap > 0)).T
         if len(cost_indices) == 0:
             print("[Visualizer] Warning: costmap is all zero.")
@@ -81,7 +64,7 @@ class VoxelSceneVisualizer:
                 name='Cost Map'
             ))
 
-        # === 3. 可视化快系统路径
+        # === 2. 可视化快系统路径
         if not executed_path_voxel or len(executed_path_voxel) == 0:
             print("[Visualizer] Warning: executed_path_voxel is empty.")
         else:
@@ -109,7 +92,7 @@ class VoxelSceneVisualizer:
                 ))
 
         # === 布局
-        fig.update_layout(
+        '''fig.update_layout(
             title="3D Scene & Cost Map with Fast Path",
             scene=dict(
                 xaxis_title='Voxel X',
@@ -120,7 +103,7 @@ class VoxelSceneVisualizer:
             ),
             margin=dict(l=0, r=0, b=0, t=50),
             showlegend=True
-        )
+        )'''
 
         # 保存
         full_path = os.path.join(self.save_dir, filename)

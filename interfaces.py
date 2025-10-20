@@ -62,10 +62,11 @@ class LMP_interface():
 
   def get_obs(self, obj_pc, label):
     obs_dict = dict()
-    #voxel_map = self._points_to_voxel_map(obj_pc)
+    voxel_map = self._points_to_voxel_map_(obj_pc)
+    #print(voxel_map)
     aabb_min = self._world_to_voxel(np.min(obj_pc, axis=0))
     aabb_max = self._world_to_voxel(np.max(obj_pc, axis=0))
-    #obs_dict['occupancy_map'] = voxel_map  # in voxel frame
+    obs_dict['occupancy_map'] = voxel_map  # in voxel frame
     obs_dict['name'] = label
     obs_dict['position'] = self._world_to_voxel(np.mean(obj_pc, axis=0))  # in voxel frame
     obs_dict['aabb'] = np.array([aabb_min, aabb_max])  # in voxel frame
@@ -213,18 +214,17 @@ class LMP_interface():
             T_camera_to_base = self.camera.get_extrinsic_matrix()
             obj_points = self.transform_points_to_world(obj_points, T_camera_to_base)
 
+            if len(obj_points) > 20:  # 只有足够点多时才滤波（避免小物体被删光）
+              import open3d as o3d
+              pcd = o3d.geometry.PointCloud()
+              pcd.points = o3d.utility.Vector3dVector(obj_points)
+              pcd_filtered, _ = pcd.remove_statistical_outlier(nb_neighbors=15, std_ratio=0.8)
+              obj_points = np.asarray(pcd_filtered.points)
+
             if len(obj_points) == 0:
                 print(f"Scene not object {label}!")
                 continue
-
-            # voxel downsample using o3d
-            pcd = o3d.geometry.PointCloud()
-            pcd.points = o3d.utility.Vector3dVector(obj_points)
-            pcd_downsampled = pcd.voxel_down_sample(voxel_size=0.001)
-            obj_points = np.asarray(pcd_downsampled.points)
-
-            obj_points = self.filter_largest_cluster(obj_points, eps=0.01, min_samples=10)
-
+            
             obs = self.get_obs(obj_points, label)
             state[label] = obs
 
@@ -308,6 +308,14 @@ class LMP_interface():
     _voxels_bounds_robot_max = self.ur5.workspace_bounds_max.astype(np.float32)
     _map_size = self._map_size
     return pc2voxel_map(_points, _voxels_bounds_robot_min, _voxels_bounds_robot_max, _map_size)
+  
+  def _points_to_voxel_map_(self, points):
+    """convert points in world frame to voxel frame, voxelize, and return the voxelized points"""
+    _points = points.astype(np.float32)
+    _voxels_bounds_robot_min = self.ur5.workspace_bounds_min.astype(np.float32)
+    _voxels_bounds_robot_max = self.ur5.workspace_bounds_max.astype(np.float32)
+    _map_size = self._map_size
+    return pc2voxel_map_(_points, _voxels_bounds_robot_min, _voxels_bounds_robot_max, _map_size)
 
   def _get_voxel_center(self, voxel_map):
     """calculte the center of the voxel map where value is 1"""
@@ -376,3 +384,17 @@ def pc2voxel_map(points, voxel_bounds_robot_min, voxel_bounds_robot_max, map_siz
   for i in range(points_vox.shape[0]):
       voxel_map[points_vox[i, 0], points_vox[i, 1], points_vox[i, 2]] = 1
   return voxel_map
+
+def pc2voxel_map_(points, voxel_bounds_robot_min, voxel_bounds_robot_max, map_size):
+  """given point cloud, create a fixed size voxel map, and fill in the voxels"""
+  points = points.astype(np.float32)
+  voxel_bounds_robot_min = voxel_bounds_robot_min.astype(np.float32)
+  voxel_bounds_robot_max = voxel_bounds_robot_max.astype(np.float32)
+  # make sure the point is within the voxel bounds
+  points = np.clip(points, voxel_bounds_robot_min, voxel_bounds_robot_max)
+  # voxelize
+  voxel_xyz = (points - voxel_bounds_robot_min) / (voxel_bounds_robot_max - voxel_bounds_robot_min) * (map_size - 1)
+  # to integer
+  _out = np.empty_like(voxel_xyz)
+  points_vox = np.round(voxel_xyz, 0, _out).astype(np.int32)
+  return points_vox

@@ -8,7 +8,7 @@ from transforms3d.euler import euler2quat,quat2euler
 from transforms3d.quaternions import qinverse,qmult
 from scipy.spatial.transform import Rotation as R
 import queue
-from scipy.ndimage import distance_transform_edt
+from scipy.ndimage import distance_transform_edt,zoom
 from Threads import Low_Execute_Thread,traj_Thread,map_Thread
 import threading
 import time
@@ -285,7 +285,6 @@ class LMP:
         affordable = action_state["affordable"]
         affordable_set = affordable["set"]
         if affordable_set != "default" :
-            affordable_map = lmp_env._get_default_voxel_map('target')()
             affordable_var = affordable["object"]
             object = object_state[affordable_var]["obs"]
             if "center_x, center_y, center_z" in affordable.keys():
@@ -308,7 +307,6 @@ class LMP:
         avoidance_set = avoidance["set"]
         if avoidance_set != "default" :
             avoidance_vars = action_state["avoid"]["object"]
-            avoidance_vars = eval(avoidance_vars)
             if not isinstance(avoidance_vars, list):
                 avoidance_vars = [avoidance_vars]
 
@@ -317,16 +315,10 @@ class LMP:
                     print(f"Object {avoidance_var} not found in scene in this step.")
                     pass
                 object = object_state[avoidance_var]["obs"]
-                if "center_x, center_y, center_z" in avoidance.keys():
-                    center_x, center_y, center_z = eval(avoidance["center_x, center_y, center_z"])
-                if "(min_x, min_y, min_z), (max_x, max_y, max_z)" in avoidance.keys():
-                    (min_x, min_y, min_z), (max_x, max_y, max_z) = eval(avoidance["(min_x, min_y, min_z), (max_x, max_y, max_z)"])
-                x = eval(avoidance["x"])
-                y = eval(avoidance["y"])
-                z = eval(avoidance["z"])
-                radius_cm = avoidance["radius_cm"]
+                if "occupancy_map" in avoidance.keys():
+                    occupancy_map = eval(avoidance["occupancy_map"])
                 value = avoidance["value"]
-                avoidance_map = set_voxel_by_radius(avoidance_map, [x,y,z], radius_cm, value)
+                avoidance_map = set_voxel_by_avoid(avoidance_map, occupancy_map, value)
         return np.array(avoidance_map)
     
     def __get__gripper_map(self,action_state,lmp_env,object_state):
@@ -361,12 +353,43 @@ class LMP:
     
     def get_cost_map(self,lmp_env, affordable_map, avoidance_map):
         target_map = affordable_map
-        obstacle_map = gaussian_filter(avoidance_map, sigma=lmp_env.slow_planner.config.obstacle_map_gaussian_sigma)
-        obstacle_map = normalize_map(obstacle_map)
+        #obstacle_map = gaussian_filter(avoidance_map, sigma=lmp_env.slow_planner.config.obstacle_map_gaussian_sigma)
+        #obstacle_map = normalize_map(obstacle_map)
+        obstacle_map = avoidance_map
         # combine target_map and obstacle_map
         costmap = target_map * lmp_env.slow_planner.config.target_map_weight + obstacle_map * lmp_env.slow_planner.config.obstacle_map_weight
         costmap = normalize_map(costmap)
         return costmap
+
+    def distance_map_from_single_target(self, target_map, normalize=True):
+        """
+        从单目标点二值图生成欧氏距离场。
+        
+        Args:
+            target_map: 3D array, shape (H, W, D), exactly one voxel == 1 (or >0), rest == 0.
+            normalize: bool, whether to normalize to [0, 1].
+        
+        Returns:
+            distance_map: float32 array, same shape as input.
+        """
+        coords = np.argwhere(target_map)
+        if coords.size == 0:
+            raise ValueError("No target point found!")
+        target_point = coords[0]
+        
+        H, W, D = target_map.shape
+        x, y, z = target_point
+
+        xx = np.arange(H, dtype=np.float32) - x
+        yy = np.arange(W, dtype=np.float32) - y
+        zz = np.arange(D, dtype=np.float32) - z
+
+        dist = np.sqrt(xx[:, None, None]**2 + yy[None, :, None]**2 + zz[None, None, :]**2)
+        
+        if normalize:
+            dist /= dist.max()
+
+        return dist
 
 
     def __thread_update_map(self, lmp_env, action_state, state_manager):
@@ -386,8 +409,7 @@ class LMP:
 
             avoidance_map = self.__get__avoidance_map(action_state,lmp_env,object_state)
             
-            affordable_map = distance_transform_edt(1 - affordable_map)
-            affordable_map = normalize_map(affordable_map)
+            affordable_map = self.distance_map_from_single_target(affordable_map)
 
             movable = action_state["movable"]
             movable_var = object_state[movable]["obs"]
@@ -447,7 +469,7 @@ class LMP:
             if num <= 5:
                 time_sleep = 0.7
             else:
-                time_sleep = 0.5
+                time_sleep = 0.45
 
             if self.shared_queue.size() == 0:
                 if self.update_stop_event.is_set():
@@ -489,15 +511,22 @@ class LMP:
             self.executed_path_voxel.append(voxel_xyz.copy())
             time.sleep(time_sleep)
 
-            dist2target = np.linalg.norm(curr_xyz - lmp_env._voxel_to_world(queue_list[-1]))
+            if len(queue_list) == 0:
+                pass
+            else:
+                final_target = lmp_env._voxel_to_world(queue_list[-1])
+            dist2target = np.linalg.norm(curr_xyz - final_target)
 
-            print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint: (wp: {waypoint[0].round(3)}, voxel: {voxel_xyz.round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {queue_list[-1].round(3)}, start: {current_voxel_xyz}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
+            print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint: (wp: {waypoint[0].round(3)}, voxel: {voxel_xyz.round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {final_target.round(3)}, start: {current_voxel_xyz}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
 
-            # check if the movement is finished 5mm
-            if dist2target <= 0.01 or self.shared_queue.size() == 0:
-                print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={curr_xyz}, target={queue_list[-1]} (distance: {dist2target:.3f})){bcolors.ENDC}")
+            # check if the movement is finished 1.5cm
+            if dist2target <= 0.015 or self.shared_queue.size() <= 1:
+                print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] reached last waypoint; curr_xyz={curr_xyz}, target={final_target} (distance: {dist2target:.3f})){bcolors.ENDC}")
                 self.exec_stop_event.set()
                 self.update_stop_event.set()
+                waypoint = (final_target, rotation, gripper)
+                lmp_env.ur5.execute(waypoint, time_sleep)
+                lmp_env.ur5.gripper.gripper_close()
                 break
 
 
@@ -516,6 +545,9 @@ class LMP:
 
             action = planning.pop(0)
             if action == "reset to default pose":
+                if moving:
+                    time.sleep(5)
+                    continue
                 lmp_env.ur5.reset_to_default_pose()
                 time.sleep(5)
                 continue
@@ -581,7 +613,6 @@ class LMP:
                 print("正在生成可视化文件...")
                 movable_var, affordable_map, avoidance_map, gripper_map = self.get_map()
                 costmap = self.get_cost_map(lmp_env, affordable_map, avoidance_map)
-                scenemap = lmp_env._get_scene_collision_voxel_map()
 
                 # 生成文件名
                 timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -590,7 +621,6 @@ class LMP:
 
                 # 可视化
                 voxel_visualizer.visualize(
-                    scenemap=scenemap,
                     costmap=costmap,
                     executed_path_voxel=self.executed_path_voxel,
                     filename=filename,
@@ -703,6 +733,29 @@ def set_voxel_by_radius(voxel_map, voxel_xyz, radius_cm=0, value=1):
       min_z = max(0, voxel_xyz[2] - radius_z)
       max_z = min(_map_size, voxel_xyz[2] + radius_z + 1)
       voxel_map[min_x:max_x, min_y:max_y, min_z:max_z] = value
+    return voxel_map
+
+def set_voxel_by_avoid(voxel_map, points_vox, value):
+  # 1. 去重原始点
+    radius_vox = 4
+    # 去重并转为整数
+    points = np.unique(np.asarray(points_vox, dtype=int), axis=0)
+
+    H, W, D = voxel_map.shape  # 支持非立方体地图
+
+    for pt in points:
+        x, y, z = pt
+        
+        min_x = max(0, x - radius_vox)
+        max_x = min(H, x + radius_vox + 1)
+        min_y = max(0, y - radius_vox)
+        max_y = min(W, y + radius_vox + 1)
+        min_z = max(0, z - radius_vox)
+        max_z = min(D, z + radius_vox + 1)
+
+        # 切片赋值（高效！）
+        voxel_map[min_x:max_x, min_y:max_y, min_z:max_z] = value
+
     return voxel_map
 
 def rotate_pose_local_axis(rotvec_current, axis='x', angle_deg=30, degrees=True):
