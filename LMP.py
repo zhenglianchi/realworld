@@ -88,27 +88,31 @@ class SharedQueue:
 
 
 class AdaptiveWeightAdjuster:
-    """ADA: Adaptive Density-Aware Weight Adjustment
+    """自适应权重调节（Adaptive Weight Modulation），实现与论文公式一致。
 
-    自适应权重调整方法，完全基于当前帧计算，无历史依赖：
-    1. 障碍物权重自适应：机器人当前位置附近障碍物越密集，惩罚权重越大
-    2. 目标权重自适应：机器人离目标越远，目标吸引权重越大，加速靠近
-    3. 方向权重保持固定不变
+    论文中局部动作选择代价为 p_{t+1} = argmin [ β·L_dir + α·T_t + γ·O_t ]，
+    其中目标吸引权重 α 与避障权重 γ 随场景瞬时变化自适应调节（β 固定）：
+        1. 障碍物权重 γ：机器人当前位置附近障碍物越密集，γ 越大
+        2. 目标权重 α：机器人离目标越远，α 越大（加速靠近）
+        3. 方向引导权重 β 保持固定不变
 
-    使用平移sigmoid激活函数，满足σ(0) = 0。不需要保存历史，对快速变化瞬时响应。
+    具体公式（完全基于当前帧计算，无历史依赖，瞬时响应）：
+        d_obs    = mean_{v ∈ N(p_t, r)} O_t(v)          # 局部障碍物密度
+        d_target = ‖p_t − p_tar‖ / (map_size·√2)        # 归一化目标距离（体素系 xy 对角线）
+        d⁺       = max(0, d − τ)                         # 截断超额量
+        Δ(d⁺)    = σ(10·d⁺ − 5)                          # 平移 sigmoid 映射
+        α        = w_target·(1 + Δ(d_target⁺))
+        γ        = w_obs·(1 + Δ(d_obs⁺))
     不需要训练，所有调整基于当前统计信息。
     """
     def __init__(self, base_weights,
-                 k_obs=2.0, tau_obs=0.15,
-                 k_target=1.0, tau_target=0.2,
+                 tau_obs=0.15, tau_target=0.2,
                  local_radius=5):
         """
         Args:
             base_weights: dict with keys {'obstacle': w0_obs, 'target': w0_target, 'direction': w0_dir}
                 基础权重，来自配置文件
-            k_obs: 障碍物密度缩放因子，默认2.0
             tau_obs: 障碍物密度阈值 ∈ [0, 1]，低于此值几乎不增加权重，默认0.15
-            k_target: 目标距离缩放因子，默认1.0
             tau_target: 目标距离阈值 ∈ [0, 1]，超过此值才显著增加权重，默认0.2
                          (归一化后，0.2 ≈ 地图对角线的20%)
             local_radius: 局部密度计算半径，默认5体素
@@ -119,14 +123,11 @@ class AdaptiveWeightAdjuster:
         self.w_dir = base_weights['direction']
 
         # 超参数
-        self.k_obs = k_obs
         self.tau_obs = tau_obs
-        self.k_target = k_target
         self.tau_target = tau_target
         self.local_radius = int(local_radius)
 
-        # 不需要保存任何历史状态，完全基于当前帧计算
-        # 删除了上一帧变化量计算，无历史依赖
+        # 不需要保存任何历史状态，完全基于当前帧计算，瞬时响应
 
     def _calc_local_density(self, current_pos, avoidance_map):
         """Calculate obstacle density in local neighborhood around current position."""
@@ -186,38 +187,35 @@ class AdaptiveWeightAdjuster:
         """
         current_pos = np.array(current_pos, dtype=np.float32)
 
-        # ========== 1. 障碍物权重自适应 ==========
-        # 局部障碍物密度越大 → 障碍物惩罚权重越大
+        # ========== 1. 障碍物权重自适应（论文：γ = w_obs·(1 + Δ(d_obs⁺))）==========
+        # 局部障碍物密度越大 → 障碍物惩罚权重 γ 越大
         # density ∈ [0, 1]，量纲已经归一化，不需要额外处理
         density = self._calc_local_density(current_pos, avoidance_map)
-        # x = (density - tau_obs)，只在密度超过阈值时增大权重，否则保持基权重
+        # d⁺ = max(0, d − τ_obs)，只在密度超过阈值时增大权重，否则保持基权重
         # max(0, ...) 保证只有正值调整，不减少权重，只放大
-        x_obs = density - self.tau_obs
-        x_obs_pos = max(0.0, x_obs)  # x_obs_pos ∈ [0, 1-τ_obs] ⊂ [0, 1]
-        # sigmoid 平滑映射：x ∈ [0, 1] → Δ ∈ [0, 1]，饱和非线性
+        x_obs_pos = max(0.0, density - self.tau_obs)  # x_obs_pos ∈ [0, 1-τ_obs] ⊂ [0, 1]
+        # sigmoid 平滑映射：Δ = σ(10·d⁺ − 5)，饱和非线性
         # 只放大不缩小，Δ=0 时权重不变
         adjust_obs = self._sigmoid_smooth(x_obs_pos)
-        w_obs = self.w_obs_0 * (1 + self.k_obs * adjust_obs)
+        w_obs = self.w_obs_0 * (1 + adjust_obs)
 
-        # ========== 2. 目标权重自适应 ==========
-        # 机器人离目标越远 → 目标吸引权重越大，加速机器人靠近
-        # 按地图 xy 平面对角线最大距离归一化到 [0, 1]，与密度量纲一致
+        # ========== 2. 目标权重自适应（论文：α = w_target·(1 + Δ(d_target⁺))）==========
+        # 机器人离目标越远 → 目标吸引权重 α 越大，加速机器人靠近
+        # 按地图 xy 平面对角线最大距离归一化到 [0, 1]（论文的 √(W²+H²)），与密度量纲一致
         # 地面操作只考虑 xy 平面，不包含 z 轴
         current_target = self._get_target_centroid(affordable_map)
         dist_to_target = np.linalg.norm(current_pos - current_target)
         # 归一化：除以地图 xy 对角线最大距离 → 结果 ∈ [0, 1]
         max_dist = map_size * np.sqrt(2)  # xy 平面对角线
         norm_dist = dist_to_target / max_dist
-        # x = (norm_dist - tau_target)，只在距离超过阈值时增大权重，否则保持基权重
+        # d⁺ = max(0, d − τ_target)，只在距离超过阈值时增大权重，否则保持基权重
         # max(0, ...) 保证只有正值调整，不减少权重，只放大
-        # 密度和距离都归一化到 [0, 1]，x 的构造方式完全相同，量纲一致
-        x_target = norm_dist - self.tau_target
-        x_target_pos = max(0.0, x_target)  # x_target_pos ∈ [0, 1-τ_target] ⊂ [0, 1]
-        # sigmoid 平滑映射：x ∈ [0, 1] → Δ ∈ [0, 1]，饱和非线性
+        x_target_pos = max(0.0, norm_dist - self.tau_target)  # ∈ [0, 1-τ_target] ⊂ [0, 1]
+        # sigmoid 平滑映射：Δ = σ(10·d⁺ − 5)，饱和非线性
         adjust_target = self._sigmoid_smooth(x_target_pos)
-        w_target = self.w_target_0 * (1 + self.k_target * adjust_target)
+        w_target = self.w_target_0 * (1 + adjust_target)
 
-        # ========== 3. 方向权重固定 ==========
+        # ========== 3. 方向权重固定（β 不参与自适应，保持全局对齐）==========
         w_dir = self.w_dir
 
         return {
@@ -271,7 +269,7 @@ class LMP:
 
         self.move = False
 
-        # ADA: Adaptive Density-Aware 自适应权重调整器
+        # 自适应权重调节器（论文：α/γ 随目标距离与障碍密度动态调节，β 固定）
         self.adaptive_weight_adjuster = None
 
     def get_last_filename(self,folder):
@@ -516,7 +514,12 @@ class LMP:
         #obstacle_map = normalize_map(obstacle_map)
         obstacle_map = avoidance_map
 
-        # Check if adaptive weight adjustment is enabled
+        # 论文 eq. L_t(u) = T_t(u) + O_t(u)：慢系统规划代价为目标吸引场与
+        # 障碍代价场（单位代价）之和，两者均不参与自适应加权。
+        costmap = target_map + obstacle_map
+
+        # 自适应权重（论文 eq. α = w_target(1+Δ(d_target⁺))、γ = w_obs(1+Δ(d_obs⁺))）
+        # 作用于快系统局部动作选择的代价系数：β 固定，α / γ 动态调节。
         if (self.adaptive_weight_adjuster is not None and
             hasattr(lmp_env.slow_planner.config, 'adaptive_weights_enabled') and
             lmp_env.slow_planner.config.adaptive_weights_enabled and
@@ -526,19 +529,18 @@ class LMP:
             adaptive_weights = self.adaptive_weight_adjuster.update(
                 current_pos, affordable_map, avoidance_map, map_size
             )
-            w_target = adaptive_weights['target']
-            w_obs = adaptive_weights['obstacle']
-            # Update fast planner adaptive weights
-            if hasattr(lmp_env.fast_planner, 'adaptive_beta'):
-                lmp_env.fast_planner.adaptive_beta = adaptive_weights['direction']
+            # Update fast planner adaptive coefficients (α: target, γ: obstacle, β: direction)
+            if hasattr(lmp_env.fast_planner, 'adaptive_alpha'):
+                lmp_env.fast_planner.adaptive_alpha = adaptive_weights['target']
                 lmp_env.fast_planner.adaptive_avoid_weight = adaptive_weights['obstacle']
+                lmp_env.fast_planner.adaptive_beta = adaptive_weights['direction']
         else:
-            # Use fixed weights from config
-            w_target = lmp_env.slow_planner.config.target_map_weight
-            w_obs = lmp_env.slow_planner.config.obstacle_map_weight
+            # 非自适应模式：快系统回落到基线权重（与慢系统相同的 w_target / w_obs 基线）
+            if hasattr(lmp_env.fast_planner, 'adaptive_alpha'):
+                lmp_env.fast_planner.adaptive_alpha = lmp_env.slow_planner.config.target_map_weight
+                lmp_env.fast_planner.adaptive_avoid_weight = lmp_env.slow_planner.config.obstacle_map_weight
+                lmp_env.fast_planner.adaptive_beta = None  # β 使用 fast_planner 自身基线（固定）
 
-        # combine target_map and obstacle_map with weights
-        costmap = target_map * w_target + obstacle_map * w_obs
         costmap = normalize_map(costmap)
         return costmap
 
@@ -771,7 +773,7 @@ class LMP:
 
             print(action_state)
 
-            # Initialize/reset ADA adaptive weight adjuster
+            # Initialize/reset adaptive weight adjuster
             if (hasattr(lmp_env.slow_planner.config, 'adaptive_weights_enabled') and
                 lmp_env.slow_planner.config.adaptive_weights_enabled and
                 self.adaptive_weight_adjuster is None):
@@ -781,13 +783,11 @@ class LMP:
                     'target': lmp_env.slow_planner.config.target_map_weight,
                     'direction': lmp_env.fast_planner.beta
                 }
-                # Create adaptive weight adjuster
+                # Create adaptive weight adjuster (论文公式：α = w_target(1+Δ), γ = w_obs(1+Δ))
                 from LMP import AdaptiveWeightAdjuster
                 self.adaptive_weight_adjuster = AdaptiveWeightAdjuster(
                     base_weights,
-                    k_obs=lmp_env.slow_planner.config.adaptive_k_obs,
                     tau_obs=lmp_env.slow_planner.config.adaptive_tau_obs,
-                    k_target=lmp_env.slow_planner.config.adaptive_k_target,
                     tau_target=lmp_env.slow_planner.config.adaptive_tau_target,
                     local_radius=lmp_env.slow_planner.config.adaptive_local_radius
                 )

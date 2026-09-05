@@ -1,8 +1,11 @@
 """
 脚本5: VLM + YOLOE + 运动感知增强 (改进方法)
 第1、2次检测 → 随机裁剪增强 (同脚本4)
-第3次检测开始 → 使用前两次的检测结果计算运动方向，根据运动方向进行有偏向的裁剪增强。
-如果物体朝左上角移动，裁剪增强时保留左上角区域的更多内容。
+第3次检测开始 → 用最近两次成功检测的包围盒中心位移估计运动方向，
+                  按论文公式做运动偏置空间裁剪：
+                      δ_x = λ·clip(d_x, −w'/2, w'/2)
+                      Δx_k ~ U(max(0, δ_x), min(w−w', w−w'+δ_x))
+                  裁剪窗口偏向运动方向一侧，保留运动一致的视觉内容。
 每10s统计一次检测成功次数
 """
 import cv2
@@ -22,7 +25,8 @@ from openai import OpenAI
 from ultralytics import YOLOE
 from ultralytics.models.yolo.yoloe.predict_vp import YOLOEVPSegPredictor
 from VLM_demo import (encode_image, smart_resize, resize_bbox_to_original,
-                       show_box_cv2, show_mask_cv2, generate_augmented_prompts)
+                      show_box_cv2, show_mask_cv2, generate_augmented_prompts,
+                      compute_motion_vectors, generate_motion_augmented_prompts)
 
 
 def vlm_get_bboxes(image_path, instruction):
@@ -68,99 +72,14 @@ def vlm_get_bboxes(image_path, instruction):
     return resize_bbox_to_original(bbox_list, (w, h), (w_bar, h_bar))
 
 
-def compute_motion_vectors(prev_boxes, curr_boxes):
-    """
-    计算每个物体中心的运动向量。
-    """
-    motion = {}
-
-    def bbox_center(box):
-        return np.array([(box[0] + box[2]) / 2, (box[1] + box[3]) / 2])
-
-    prev_dict = {}
-    for ent in prev_boxes:
-        key = re.sub(r'\d+$', '', ent["label"])
-        if key not in prev_dict:
-            prev_dict[key] = []
-        prev_dict[key].append(bbox_center(ent["bbox"]))
-
-    curr_dict = {}
-    for ent in curr_boxes:
-        key = re.sub(r'\d+$', '', ent["label"])
-        if key not in curr_dict:
-            curr_dict[key] = []
-        curr_dict[key].append(bbox_center(ent["bbox"]))
-
-    for label in curr_dict:
-        if label in prev_dict:
-            prev_center = np.mean(prev_dict[label], axis=0)
-            curr_center = np.mean(curr_dict[label], axis=0)
-            motion[label] = curr_center - prev_center
-        else:
-            motion[label] = np.array([0.0, 0.0])
-    return motion
-
-
-def generate_motion_aware_augmented_prompts(original_image, bbox_entities,
-                                             motion_vectors, num_aug=3,
-                                             min_crop=0.75, max_crop=0.95):
-    """
-    运动感知的数据增强: 裁剪偏重保留运动方向上的内容。
-    """
-    augmented_entities = []
-
-    for entity in bbox_entities:
-        augmented_entities.append(entity.copy())
-
-        x1, y1, x2, y2 = entity["bbox"]
-        label = entity["label"]
-        orig_w = x2 - x1
-        orig_h = y2 - y1
-
-        clean_label = re.sub(r'\d+$', '', label)
-        motion_vec = motion_vectors.get(clean_label, np.array([0.0, 0.0]))
-
-        motion_norm = np.linalg.norm(motion_vec)
-        if motion_norm < 1e-6:
-            motion_dir = None
-        else:
-            motion_dir = motion_vec / motion_norm
-            motion_mag = min(motion_norm / 100.0, 1.0)
-
-        for i in range(num_aug):
-            crop_scale = np.random.uniform(min_crop, max_crop)
-            crop_w = int(orig_w * crop_scale)
-            crop_h = int(orig_h * crop_scale)
-
-            max_dx = orig_w - crop_w
-            max_dy = orig_h - crop_h
-
-            if max_dx <= 0 or max_dy <= 0:
-                continue
-
-            if motion_dir is not None:
-                # 70%运动方向偏向 + 30%随机扰动
-                bias_x = motion_dir[0] * motion_mag * max_dx * 0.7
-                bias_y = motion_dir[1] * motion_mag * max_dy * 0.7
-                rand_dx = np.random.randint(0, max(1, max_dx + 1))
-                rand_dy = np.random.randint(0, max(1, max_dy + 1))
-                dx = int(np.clip(bias_x + 0.3 * (rand_dx - max_dx / 2), 0, max_dx))
-                dy = int(np.clip(bias_y + 0.3 * (rand_dy - max_dy / 2), 0, max_dy))
-            else:
-                dx = np.random.randint(0, max_dx + 1)
-                dy = np.random.randint(0, max_dy + 1)
-
-            new_x1 = x1 + dx
-            new_y1 = y1 + dy
-            new_x2 = new_x1 + crop_w
-            new_y2 = new_y1 + crop_h
-
-            augmented_entities.append({
-                "bbox": [new_x1, new_y1, new_x2, new_y2],
-                "label": label
-            })
-
-    return augmented_entities
+# =====================================================================
+# 运动估计与运动偏置空间裁剪已统一实现在 VLM_demo.py 中（与论文公式一致）：
+#   - compute_motion_vectors(prev_entities, curr_entities):
+#       相邻两次成功检测的同类包围盒中心位移 (d_x, d_y)
+#   - generate_motion_augmented_prompts(bbox_entities, motion_vectors, ...):
+#       δ_x = λ·clip(d_x, −w'/2, w'/2); Δx_k ~ U(max(0,δ_x), min(w−w', w−w'+δ_x))
+# 本脚本直接复用，不再维护本地副本。
+# =====================================================================
 
 
 def process_visual_prompt(bbox_entities):
@@ -210,11 +129,12 @@ class DetectionStats:
 def reinit_yoloe_prompts(model, frame, bbox_entities, motion_vectors=None, use_motion=False):
     """重新设置 YOLOE 视觉提示。
     motion_vectors=None → 随机增强 (等同脚本4)
-    motion_vectors 非空 → 运动感知增强
+    motion_vectors 非空 → 运动感知增强（论文公式版，裁剪比例统一为 0.80–0.95，λ=1.0）
     """
     if use_motion and motion_vectors is not None:
-        augmented_bbox = generate_motion_aware_augmented_prompts(
-            frame, bbox_entities, motion_vectors, num_aug=3)
+        augmented_bbox = generate_motion_augmented_prompts(
+            bbox_entities, motion_vectors, num_aug=3,
+            min_crop=0.80, max_crop=0.95, sensitivity=1.0)
     else:
         augmented_bbox = generate_augmented_prompts(
             frame, bbox_entities, num_aug=3, min_crop=0.80, max_crop=0.95)
@@ -304,20 +224,21 @@ def main():
             stats.add(False, yoloe_time)
 
         # ===== 运动感知增强逻辑 =====
-        # 前两次检测: 随机增强 (已在阶段2设置) → 仅累积历史
-        # 第3次检测起: 用前两次历史计算运动方向, 切换为运动感知增强
+        # 前几次成功检测: 随机增强 (已在阶段2设置) → 仅累积历史
+        # 到第3次成功检测时: 用最近两次成功检测（history 倒数第2、1条）
+        #   的包围盒中心位移估计运动方向, 切换为运动感知增强
         if len(curr_detected_boxes) > 0:
             detection_history.append((curr_detected_boxes, time.time()))
             # 只保留最近3次 (用于运动计算)
             if len(detection_history) > 3:
                 detection_history.pop(0)
 
-        # 第3次检测: 首次切换到运动感知模式
+        # 第3次成功检测: 首次切换到运动感知模式
         if detection_count == 3 and not use_motion_mode and len(detection_history) >= 2:
             t_motion = time.time()
             motion_vectors = compute_motion_vectors(
-                detection_history[-2][0],   # 第1次有结果的检测
-                detection_history[-1][0]    # 第2次有结果的检测
+                detection_history[-2][0],   # 最近第2次成功检测
+                detection_history[-1][0]    # 最近第1次（当前）成功检测
             )
             motion_time = time.time() - t_motion
 

@@ -6,7 +6,8 @@ from fast_planners import Fast_PathPlanner
 import time
 from scipy.ndimage import distance_transform_edt
 import open3d as o3d
-from VLM_demo import  show_box_cv2,show_mask_cv2,encode_image_PIL, get_world_bboxs_list,show_mask,show_box,process_visual_prompt,set_visual_prompt,predict_mask,encode_image,resize_bbox_to_original,smart_resize,get_response,generate_augmented_prompts
+from VLM_demo import  show_box_cv2,show_mask_cv2,encode_image_PIL, get_world_bboxs_list,show_mask,show_box,process_visual_prompt,set_visual_prompt,predict_mask,encode_image,resize_bbox_to_original,smart_resize,get_response,generate_augmented_prompts,compute_motion_vectors,generate_motion_augmented_prompts
+from collections import deque
 from PIL import Image
 from scipy.ndimage import binary_erosion
 import matplotlib.pyplot as plt
@@ -172,7 +173,10 @@ class LMP_interface():
           self.camera.get_aligned_images()
       frame, bbox_entities = self.qwen_vl_box(instruction)
       print(f"VLM输出检测框数量: {len(bbox_entities)}")
-      # 数据增强：为每个原始框生成3个随机裁剪增强样本
+      # 数据增强：为每个原始框生成3个随机裁剪增强样本（初始阶段）
+      # 说明：初始先用随机增广（同脚本4）积累若干次成功检测，
+      #       从第3次成功检测起切换到"运动偏置空间裁剪"（论文公式），
+      #       并按物体运动学周期性重设 YOLOE 视觉提示（对应 Algorithm 1 的 Augment(O_j)）。
       augmented_bbox_entities = generate_augmented_prompts(
           frame, bbox_entities, num_aug=3, min_crop=0.80, max_crop=0.95
       )
@@ -183,6 +187,14 @@ class LMP_interface():
       #self.objects = objects
       
       print("视觉预处理完成")
+
+      # —— 运动偏置空间裁剪（论文 §3.2.2）运行状态 ——
+      # 相邻两次成功检测的包围盒中心位移 d 用于估计物体运动方向；
+      # 增广裁剪按 δ = λ·clip(d, ±w'/2) 与 Δ ~ U(max(0,δ), min(w−w', w−w'+δ))
+      # 偏向运动方向采样（λ = 1.0），使视觉提示与物体运动学动态对齐。
+      detection_history = deque(maxlen=3)
+      detection_count = 0
+      use_motion_mode = False
 
       # 视觉检测统计（每5s汇总输出一次）
       _vis_count = 0
@@ -217,11 +229,16 @@ class LMP_interface():
             _vis_total_objects = 0
             _vis_last_report = time.time()
         detect_objects = []
+        detection_entities = []   # 本帧成功检测的 {bbox, label}，用于运动估计
         for (box_entity, mask) in zip(boxes, masks_):
             id = int(box_entity[5])
             box = box_entity[:4]
             label = id2label[id]
             detect_objects.append(label)
+            detection_entities.append({
+                "bbox": [float(box[0]), float(box[1]), float(box[2]), float(box[3])],
+                "label": label
+            })
 
             points, masks = [], []
             
@@ -255,6 +272,37 @@ class LMP_interface():
             
             obs = self.get_obs(obj_points, label)
             state[label] = obs
+
+        # —— 运动偏置空间裁剪：周期性动态对齐视觉提示与物体运动学 ——
+        # 第 3 次成功检测起，用最近两次成功检测的中心位移估计运动方向，
+        # 按论文公式重新生成运动偏置增广提示并重设 YOLOE 视觉提示；
+        # 之后每 10 次成功检测沿最新运动方向更新一次提示。
+        if len(detection_entities) > 0:
+            detection_count += 1
+            detection_history.append(detection_entities)
+            if detection_count == 3 and not use_motion_mode:
+                motion_vectors = compute_motion_vectors(
+                    detection_history[-2], detection_history[-1])
+                _motion_start = time.time()
+                augmented = generate_motion_augmented_prompts(
+                    bbox_entities, motion_vectors, num_aug=3,
+                    min_crop=0.80, max_crop=0.95, sensitivity=1.0)   # λ = 1.0
+                visuals_new, classes_new, _, _ = process_visual_prompt(augmented)
+                set_visual_prompt(frame, visuals_new, classes_new)
+                use_motion_mode = True
+                print(f"[LOG][运动偏置] 第3次成功检测: 已切换运动偏置空间裁剪, "
+                      f"提示数 {len(augmented)}, 耗时 {(time.time()-_motion_start)*1000:.1f}ms")
+            elif use_motion_mode and detection_count > 3 and detection_count % 10 == 0:
+                motion_vectors = compute_motion_vectors(
+                    detection_history[-2], detection_history[-1])
+                _motion_start = time.time()
+                augmented = generate_motion_augmented_prompts(
+                    bbox_entities, motion_vectors, num_aug=3,
+                    min_crop=0.80, max_crop=0.95, sensitivity=1.0)   # λ = 1.0
+                visuals_new, classes_new, _, _ = process_visual_prompt(augmented)
+                set_visual_prompt(frame, visuals_new, classes_new)
+                print(f"[LOG][运动偏置] 第{detection_count}次成功检测: "
+                      f"已按最新运动方向更新视觉提示, 耗时 {(time.time()-_motion_start)*1000:.1f}ms")
 
         state['gripper'] = self.get_ee_obs()
 

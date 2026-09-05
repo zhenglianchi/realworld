@@ -17,20 +17,17 @@ planner:
   map_size: 250
   
   fast_num_candidates: 50
-  fast_alpha: 10.0
-  fast_beta: 0.5
-  avoid_weight: 100.0
+  fast_beta: 0.5               # 方向引导权重 β（固定，不参与自适应）
   fast_radius: 2
 
-  # ADA: Adaptive Density-Aware 自适应权重调整
+  # 自适应权重调节（论文公式 α = w_target·(1+Δ(d_target⁺))，γ = w_obs·(1+Δ(d_obs⁺))）
+  # 基线 α_0 = target_map_weight(=1)，基线 γ_0 = obstacle_map_weight(=2)，Δ(d⁺) = σ(10·d⁺−5)
   adaptive_weights_enabled: true
-  adaptive_k_obs: 2.0          # 障碍物密度缩放因子 k_obs
   adaptive_tau_obs: 0.15       # 障碍物密度阈值 τ_obs ∈ [0, 1]，低于此不增加权重
-  adaptive_k_target: 1.0       # 目标距离缩放因子 k_target
   adaptive_tau_target: 0.2     # 目标距离阈值 τ_target ∈ [0, 1]，超过才显著增加权重
                                # (归一化后，0.2 ≈ 地图对角线的20%)
   adaptive_local_radius: 5     # 局部密度计算半径 (体素)
-  # 注：方向权重已改为固定，不再自适应调整
+  # 注：方向权重 β 保持固定，不再自适应调整
 
 visualizer:
   save_dir: ./visualizations

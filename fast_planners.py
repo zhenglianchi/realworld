@@ -6,11 +6,14 @@ class Fast_PathPlanner:
         self.config = planner_config
         self.radius = self.config.fast_radius
         self.num_candidates = self.config.fast_num_candidates
-        self.beta = self.config.fast_beta             # 方向权重
-        self.alpha = self.config.fast_alpha           # 可达性权重
-        self.avoid_weight = self.config.avoid_weight  # 避障惩罚权重
+        self.beta = self.config.fast_beta             # 方向引导权重 β（固定，不参与自适应）
+        # 论文复合代价 p_{t+1}=argmin[β·L_dir + α·T_t + γ·O_t] 中的系数：
+        # α 基线 = w_target（target_map_weight），γ 基线 = w_obs（obstacle_map_weight）
+        self.alpha = self.config.target_map_weight    # 目标吸引权重 α 基线
+        self.avoid_weight = self.config.obstacle_map_weight  # 避障权重 γ 基线
 
-        # Adaptive weights (ADA method) - updated by LMP
+        # Adaptive weights (as in the paper) - updated by LMP
+        self.adaptive_alpha = None
         self.adaptive_beta = None
         self.adaptive_avoid_weight = None
 
@@ -117,13 +120,15 @@ class Fast_PathPlanner:
         ]
 
         # 7. 综合评分,越小越好
-        # Use adaptive weights if available (ADA method), else use fixed weights
+        # 论文复合代价: β·L_dir(p_c) + α·T_t(p_c) + γ·O_t(p_c)
+        # Use adaptive weights if available (as in the paper), else use baseline weights
         beta_used = self.adaptive_beta if self.adaptive_beta is not None else self.beta
+        alpha_used = self.adaptive_alpha if self.adaptive_alpha is not None else self.alpha
         avoid_used = self.adaptive_avoid_weight if self.adaptive_avoid_weight is not None else self.avoid_weight
 
         total_scores = (
             beta_used * angle_penalty +
-            self.alpha * afford_values +
+            alpha_used * afford_values +
             avoid_used * avoid_values
         )
 

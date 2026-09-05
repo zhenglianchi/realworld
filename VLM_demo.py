@@ -347,3 +347,129 @@ def generate_augmented_prompts(original_image, bbox_entities, num_aug=3, min_cro
             })
 
     return augmented_entities
+
+
+def compute_motion_vectors(prev_entities, curr_entities):
+    """
+    计算每个物体中心在相邻两次成功检测之间的运动向量（像素位移）。
+
+    Args:
+        prev_entities / curr_entities: list[dict]，元素为 {"bbox":[x1,y1,x2,y2], "label": str}
+            分别对应上一帧与当前帧的检测结果。
+    Returns:
+        motion: dict，key 为去除尾部数字后的类别名，value 为该类别物体中心的位移向量
+                (curr_center - prev_center)；当前帧新出现、上一帧没有的类别返回零向量。
+    """
+    motion = {}
+
+    def bbox_center(box):
+        return np.array([(box[0] + box[2]) / 2, (box[1] + box[3]) / 2])
+
+    prev_dict = {}
+    for ent in prev_entities:
+        key = re.sub(r'\d+$', '', ent["label"])
+        if key not in prev_dict:
+            prev_dict[key] = []
+        prev_dict[key].append(bbox_center(ent["bbox"]))
+
+    curr_dict = {}
+    for ent in curr_entities:
+        key = re.sub(r'\d+$', '', ent["label"])
+        if key not in curr_dict:
+            curr_dict[key] = []
+        curr_dict[key].append(bbox_center(ent["bbox"]))
+
+    for label in curr_dict:
+        if label in prev_dict:
+            prev_center = np.mean(prev_dict[label], axis=0)
+            curr_center = np.mean(curr_dict[label], axis=0)
+            motion[label] = curr_center - prev_center
+        else:
+            motion[label] = np.array([0.0, 0.0])
+    return motion
+
+
+def generate_motion_augmented_prompts(bbox_entities, motion_vectors, num_aug=3,
+                                      min_crop=0.80, max_crop=0.95, sensitivity=1.0):
+    """
+    运动偏置空间裁剪（Motion-biased Spatial Cropping），实现与论文公式一致。
+
+    对每个原始检测框（宽 w、高 h），生成 num_aug 个增广提示：
+        1. 裁剪比例均匀采样：s_k ~ U(min_crop, max_crop)，缩放后宽高 w' = s_k*w, h' = s_k*h；
+        2. 沿运动方向的位移（sensitivity 即论文中的灵敏度系数 λ）：
+               δ_x = λ · clip(d_x, −w'/2,  w'/2)
+               δ_y = λ · clip(d_y, −h'/2,  h'/2)
+           其中 (d_x, d_y) 为相邻两次检测的物体包围盒中心位移（motion_vectors 提供）；
+        3. 增广框左上角偏移从运动偏置分布中采样：
+               Δx_k ~ U( max(0, δ_x), min(w − w', w − w' + δ_x) )
+               Δy_k ~ U( max(0, δ_y), min(h − h', h − h' + δ_y) )
+           即裁剪窗口偏向物体运动方向一侧，使增广视图包含运动一致的视觉内容。
+    当物体无明显运动（δ≈0）时，上述分布退化为框内均匀随机裁剪（与 +Random 变体一致）。
+
+    Args:
+        bbox_entities: list[dict]，VLM 输出的原始检测框，元素 {"bbox":[x1,y1,x2,y2], "label": str}
+        motion_vectors: dict，类别名 -> 2 维位移向量（像素），由 compute_motion_vectors 得到
+        num_aug: int, 每个原始框生成的增广样本数 K（默认 3）
+        min_crop / max_crop: float, 裁剪比例 s_k 的采样区间
+        sensitivity: float, 灵敏度系数 λ（论文 eq. δ_x = λ·clip(d_x, −w'/2, w'/2)），默认 1.0
+
+    Returns:
+        augmented_entities: list[dict]，原始框 + 全部增广框
+    """
+    augmented_entities = []
+
+    for entity in bbox_entities:
+        # 原始框保留
+        augmented_entities.append(entity.copy())
+        x1, y1, x2, y2 = entity["bbox"]
+        label = entity["label"]
+        w = x2 - x1
+        h = y2 - y1
+
+        clean_label = re.sub(r'\d+$', '', label)
+        motion_vec = motion_vectors.get(clean_label, np.array([0.0, 0.0]))
+        d_x = float(motion_vec[0])
+        d_y = float(motion_vec[1])
+
+        for _ in range(num_aug):
+            # 1) 裁剪比例 s_k ~ U(min_crop, max_crop)，缩放尺寸 w' = s_k*w, h' = s_k*h
+            crop_scale = np.random.uniform(min_crop, max_crop)
+            crop_w = int(w * crop_scale)
+            crop_h = int(h * crop_scale)
+            if crop_w <= 0 or crop_h <= 0 or crop_w >= w or crop_h >= h:
+                continue
+
+            # 2) 运动方向位移：δ_x = λ·clip(d_x, −w'/2, w'/2)，δ_y 同理
+            delta_x = sensitivity * float(np.clip(d_x, -crop_w / 2.0, crop_w / 2.0))
+            delta_y = sensitivity * float(np.clip(d_y, -crop_h / 2.0, crop_h / 2.0))
+
+            # 裁剪框必须保持在原始框内：可行偏移范围为 [0, w−w']（[0, h−h']）
+            margin_x = w - crop_w
+            margin_y = h - crop_h
+            # 当 |δ| 超出可行余量时夹取，保证下面的采样区间非空
+            delta_x = float(np.clip(delta_x, -margin_x, margin_x))
+            delta_y = float(np.clip(delta_y, -margin_y, margin_y))
+
+            # 3) 从运动偏置分布采样左上角偏移
+            #    lo = max(0, δ), hi = min(w−w', w−w'+δ)
+            lo_x = max(0.0, delta_x)
+            hi_x = margin_x + min(0.0, delta_x)
+            lo_y = max(0.0, delta_y)
+            hi_y = margin_y + min(0.0, delta_y)
+            dx = int(round(np.random.uniform(lo_x, hi_x)))
+            dy = int(round(np.random.uniform(lo_y, hi_y)))
+            # 四舍五入越界保护
+            dx = min(max(dx, 0), margin_x)
+            dy = min(max(dy, 0), margin_y)
+
+            new_x1 = x1 + dx
+            new_y1 = y1 + dy
+            new_x2 = new_x1 + crop_w
+            new_y2 = new_y1 + crop_h
+
+            augmented_entities.append({
+                "bbox": [new_x1, new_y1, new_x2, new_y2],
+                "label": label
+            })
+
+    return augmented_entities
