@@ -1,0 +1,9 @@
+﻿# Local machine settings
+.claude/
+
+# Large model weights - download from HuggingFace instead of committing
+owlvit-base-patch16/pytorch_model.bin
+
+# Python
+__pycache__/
+*.pyc

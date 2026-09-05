@@ -87,6 +87,152 @@ class SharedQueue:
             return len(self._data)
 
 
+class AdaptiveWeightAdjuster:
+    """ADA: Adaptive Density-Aware Weight Adjustment
+
+    自适应权重调整方法，完全基于当前帧计算，无历史依赖：
+    1. 障碍物权重自适应：机器人当前位置附近障碍物越密集，惩罚权重越大
+    2. 目标权重自适应：机器人离目标越远，目标吸引权重越大，加速靠近
+    3. 方向权重保持固定不变
+
+    使用平移sigmoid激活函数，满足σ(0) = 0。不需要保存历史，对快速变化瞬时响应。
+    不需要训练，所有调整基于当前统计信息。
+    """
+    def __init__(self, base_weights,
+                 k_obs=2.0, tau_obs=0.15,
+                 k_target=1.0, tau_target=0.2,
+                 local_radius=5):
+        """
+        Args:
+            base_weights: dict with keys {'obstacle': w0_obs, 'target': w0_target, 'direction': w0_dir}
+                基础权重，来自配置文件
+            k_obs: 障碍物密度缩放因子，默认2.0
+            tau_obs: 障碍物密度阈值 ∈ [0, 1]，低于此值几乎不增加权重，默认0.15
+            k_target: 目标距离缩放因子，默认1.0
+            tau_target: 目标距离阈值 ∈ [0, 1]，超过此值才显著增加权重，默认0.2
+                         (归一化后，0.2 ≈ 地图对角线的20%)
+            local_radius: 局部密度计算半径，默认5体素
+        """
+        # 基础权重，方向权重固定不调整
+        self.w_obs_0 = base_weights['obstacle']
+        self.w_target_0 = base_weights['target']
+        self.w_dir = base_weights['direction']
+
+        # 超参数
+        self.k_obs = k_obs
+        self.tau_obs = tau_obs
+        self.k_target = k_target
+        self.tau_target = tau_target
+        self.local_radius = int(local_radius)
+
+        # 不需要保存任何历史状态，完全基于当前帧计算
+        # 删除了上一帧变化量计算，无历史依赖
+
+    def _calc_local_density(self, current_pos, avoidance_map):
+        """Calculate obstacle density in local neighborhood around current position."""
+        H, W, D = avoidance_map.shape
+        r = self.local_radius
+
+        # Get neighborhood bounds with clipping
+        x0 = max(0, int(np.round(current_pos[0])) - r)
+        x1 = min(H, int(np.round(current_pos[0])) + r + 1)
+        y0 = max(0, int(np.round(current_pos[1])) - r)
+        y1 = min(W, int(np.round(current_pos[1])) + r + 1)
+        z0 = max(0, int(np.round(current_pos[2])) - r)
+        z1 = min(D, int(np.round(current_pos[2])) + r + 1)
+
+        # Extract local patch and calculate density
+        local_patch = avoidance_map[x0:x1, y0:y1, z0:z1]
+        density = float(np.mean(local_patch))
+        return density
+
+    def _get_target_centroid(self, affordable_map):
+        """Get centroid of target region from affordable_map."""
+        coords = np.argwhere(affordable_map > 0)
+        if len(coords) == 0:
+            return np.zeros(3, dtype=np.float32)
+        return np.mean(coords, axis=0).astype(np.float32)
+
+    def _sigmoid_smooth(self, x):
+        """Smooth sigmoid mapping that maps x ∈ [0,1] → Δ ∈ [0,1].
+
+        Scaled sigmoid: Δ = σ(10x - 5)
+        Weight = 10.0, bias = -5.0
+        Property:
+        - x ∈ [0, 1] → 10x-5 ∈ [-5, 5] → Δ ∈ [≈0.007, ≈0.993]
+        - Symmetric around x=0.5: Δ(0.5) = 0.5
+        - Smooth sigmoid, gradually increasing from near 0 to near 1
+        - Strictly increasing, smooth saturation
+        - Used for smooth parameter amplification.
+        """
+        # Weight 10.0, bias -5.0
+        # Symmetric: x=0 → Δ≈0, x=0.5 → Δ=0.5, x=1 → Δ≈1
+        return 1.0 / (1.0 + np.exp(-(10.0 * x - 5.0)))
+
+    def update(self, current_pos, affordable_map, avoidance_map, map_size):
+        """
+        Update adaptive weights based on current map data.
+        完全基于当前观测，瞬时响应，无任何历史依赖。
+
+        Args:
+            current_pos: (3,) current robot end-effector position in voxel coordinates
+            affordable_map: (H, W, D) target/affordance distance map
+            avoidance_map: (H, W, D) obstacle occupancy map
+            map_size: size of voxel grid
+
+        Returns:
+            dict: {'obstacle': w_obs, 'target': w_target, 'direction': w_dir}
+                自适应计算得到的权重
+        """
+        current_pos = np.array(current_pos, dtype=np.float32)
+
+        # ========== 1. 障碍物权重自适应 ==========
+        # 局部障碍物密度越大 → 障碍物惩罚权重越大
+        # density ∈ [0, 1]，量纲已经归一化，不需要额外处理
+        density = self._calc_local_density(current_pos, avoidance_map)
+        # x = (density - tau_obs)，只在密度超过阈值时增大权重，否则保持基权重
+        # max(0, ...) 保证只有正值调整，不减少权重，只放大
+        x_obs = density - self.tau_obs
+        x_obs_pos = max(0.0, x_obs)  # x_obs_pos ∈ [0, 1-τ_obs] ⊂ [0, 1]
+        # sigmoid 平滑映射：x ∈ [0, 1] → Δ ∈ [0, 1]，饱和非线性
+        # 只放大不缩小，Δ=0 时权重不变
+        adjust_obs = self._sigmoid_smooth(x_obs_pos)
+        w_obs = self.w_obs_0 * (1 + self.k_obs * adjust_obs)
+
+        # ========== 2. 目标权重自适应 ==========
+        # 机器人离目标越远 → 目标吸引权重越大，加速机器人靠近
+        # 按地图 xy 平面对角线最大距离归一化到 [0, 1]，与密度量纲一致
+        # 地面操作只考虑 xy 平面，不包含 z 轴
+        current_target = self._get_target_centroid(affordable_map)
+        dist_to_target = np.linalg.norm(current_pos - current_target)
+        # 归一化：除以地图 xy 对角线最大距离 → 结果 ∈ [0, 1]
+        max_dist = map_size * np.sqrt(2)  # xy 平面对角线
+        norm_dist = dist_to_target / max_dist
+        # x = (norm_dist - tau_target)，只在距离超过阈值时增大权重，否则保持基权重
+        # max(0, ...) 保证只有正值调整，不减少权重，只放大
+        # 密度和距离都归一化到 [0, 1]，x 的构造方式完全相同，量纲一致
+        x_target = norm_dist - self.tau_target
+        x_target_pos = max(0.0, x_target)  # x_target_pos ∈ [0, 1-τ_target] ⊂ [0, 1]
+        # sigmoid 平滑映射：x ∈ [0, 1] → Δ ∈ [0, 1]，饱和非线性
+        adjust_target = self._sigmoid_smooth(x_target_pos)
+        w_target = self.w_target_0 * (1 + self.k_target * adjust_target)
+
+        # ========== 3. 方向权重固定 ==========
+        w_dir = self.w_dir
+
+        return {
+            'obstacle': w_obs,
+            'target': w_target,
+            'direction': w_dir
+        }
+
+    def reset(self):
+        """Reset states. Call when starting a new planning task.
+        因为不保存历史，所以不需要重置任何东西。
+        """
+        pass
+
+
 # creating some aliases for end effector and table in case LLMs refer to them differently (but rarely this happens)
 EE_ALIAS = ['ee', 'endeffector', 'end_effector', 'end effector', 'gripper', 'hand']
 TABLE_ALIAS = ['table', 'desk', 'workstation', 'work_station', 'work station', 'workspace', 'work_space', 'work space']
@@ -125,6 +271,9 @@ class LMP:
 
         self.move = False
 
+        # ADA: Adaptive Density-Aware 自适应权重调整器
+        self.adaptive_weight_adjuster = None
+
     def get_last_filename(self,folder):
         while True:
             filenames = os.listdir(folder)
@@ -134,13 +283,16 @@ class LMP:
             else:
                 time.sleep(1)
 
-    def get_response(self,messages):
-        client = OpenAI(api_key=self.api_key,base_url=self.base_url)
+    def get_response(self, messages, caller="unknown"):
+        client = OpenAI(api_key=self.api_key, base_url=self.base_url)
 
+        _vlm_start = time.time()
         completion = client.chat.completions.create(
-            model=self._cfg['vision_model'], 
+            model=self._cfg['vision_model'],
             messages=messages
         )
+        _vlm_elapsed = time.time() - _vlm_start
+        print(f"[LOG][VLM推理] VLM API调用延时: {_vlm_elapsed:.3f}s, 调用者: {caller}, 模型: {self._cfg['vision_model']}")
         return completion
 
     def generate_planning(self, query, lmp_env,image_share):
@@ -164,7 +316,7 @@ class LMP:
                 }
                 ]}]
 
-        result = self.get_response(messages)
+        result = self.get_response(messages, caller="generate_planning")
 
         planner = result.choices[0].message.content
 
@@ -209,7 +361,7 @@ class LMP:
                     ]
                              }
                              )
-            tokens = self.get_response(messages).choices[0].message.content
+            tokens = self.get_response(messages, caller="rotation_generate").choices[0].message.content
             answer = tokens.split("\n")[1].strip()
             explanation = tokens.split("\n")[2]
             print(Q[i])
@@ -234,7 +386,7 @@ class LMP:
                     print("Invalid choice")
                     exit()
             else:
-                pause = input("press any key to continue...")
+                #pause = input("press any key to continue...")
                 if C == "A" or C == "C":
                     # 如果是A则恢复到初始位姿
                     target_rotation = current_rotation
@@ -247,8 +399,8 @@ class LMP:
 
             next_pos = np.array(current_pos.tolist()+target_rotation.tolist())
             #print(next_pos)
-            lmp_env.ur5.servoL(next_pos,time=4)
-            time.sleep(8)
+            #lmp_env.ur5.servoL(next_pos,time=4)
+            #time.sleep(8)
 
             
 
@@ -268,15 +420,16 @@ class LMP:
                 }
                 ]}]
 
-        result = self.get_response(messages)
+        result = self.get_response(messages, caller="_vlmapi_call")
 
         resstr = result.choices[0].message.content.replace("```","").replace("json","")
 
         print(resstr)
 
         state = json.loads(resstr)
-
-        return state[0]
+        if isinstance(state, list):
+            return state[0]
+        return state
 
 
 
@@ -286,6 +439,9 @@ class LMP:
         affordable_set = affordable["set"]
         if affordable_set != "default" :
             affordable_var = affordable["object"]
+            if affordable_var not in object_state:
+                print(f"Object {affordable_var} not found in scene in this step, using default affordable map.")
+                return affordable_map
             object = object_state[affordable_var]["obs"]
             if "center_x, center_y, center_z" in affordable.keys():
                 center_x, center_y, center_z = eval(affordable["center_x, center_y, center_z"])
@@ -333,6 +489,9 @@ class LMP:
                 gripper_map[:, :, :] = 0
                 return gripper_map
             gripper_var = action_state["gripper"]["object"]
+            if gripper_var not in object_state:
+                print(f"Object {gripper_var} not found in scene in this step, using default gripper map.")
+                return gripper_map
             object = object_state[gripper_var]["obs"]
             if "center_x, center_y, center_z" in gripper.keys():
                 center_x, center_y, center_z = eval(gripper["center_x, center_y, center_z"])
@@ -351,13 +510,35 @@ class LMP:
         with self.map_lock:
             return self.movable_var, self.affordable_map, self.avoidance_map, self.gripper_map
     
-    def get_cost_map(self,lmp_env, affordable_map, avoidance_map):
+    def get_cost_map(self,lmp_env, affordable_map, avoidance_map, current_pos=None):
         target_map = affordable_map
         #obstacle_map = gaussian_filter(avoidance_map, sigma=lmp_env.slow_planner.config.obstacle_map_gaussian_sigma)
         #obstacle_map = normalize_map(obstacle_map)
         obstacle_map = avoidance_map
-        # combine target_map and obstacle_map
-        costmap = target_map * lmp_env.slow_planner.config.target_map_weight + obstacle_map * lmp_env.slow_planner.config.obstacle_map_weight
+
+        # Check if adaptive weight adjustment is enabled
+        if (self.adaptive_weight_adjuster is not None and
+            hasattr(lmp_env.slow_planner.config, 'adaptive_weights_enabled') and
+            lmp_env.slow_planner.config.adaptive_weights_enabled and
+            current_pos is not None):
+            # Get adaptive weights
+            map_size = lmp_env.slow_planner.map_size
+            adaptive_weights = self.adaptive_weight_adjuster.update(
+                current_pos, affordable_map, avoidance_map, map_size
+            )
+            w_target = adaptive_weights['target']
+            w_obs = adaptive_weights['obstacle']
+            # Update fast planner adaptive weights
+            if hasattr(lmp_env.fast_planner, 'adaptive_beta'):
+                lmp_env.fast_planner.adaptive_beta = adaptive_weights['direction']
+                lmp_env.fast_planner.adaptive_avoid_weight = adaptive_weights['obstacle']
+        else:
+            # Use fixed weights from config
+            w_target = lmp_env.slow_planner.config.target_map_weight
+            w_obs = lmp_env.slow_planner.config.obstacle_map_weight
+
+        # combine target_map and obstacle_map with weights
+        costmap = target_map * w_target + obstacle_map * w_obs
         costmap = normalize_map(costmap)
         return costmap
 
@@ -397,24 +578,23 @@ class LMP:
         _map_size = lmp_env._map_size
         _resolution = lmp_env._resolution
         update_count = 0
+        total_latency = 0.0
         last_log_time = time.time()
 
         while not self.update_stop_event.is_set():
             test1 = time.time()
             object_state = state_manager.get_state(blocking = True, timeout = 300.0)
-            #print(object_state)
             affordable_map = self.__get__affordable_map(action_state,lmp_env,object_state)
             if not self.wakeup_flag:
                 gripper_map = self.__get__gripper_map(action_state,lmp_env,object_state)
 
             avoidance_map = self.__get__avoidance_map(action_state,lmp_env,object_state)
-            
+
             affordable_map = self.distance_map_from_single_target(affordable_map)
 
             movable = action_state["movable"]
             movable_var = object_state[movable]["obs"]
             test2 = time.time()
-            print("test:",test2-test1)
 
             with self.map_lock:
                 self.movable_var = movable_var
@@ -422,17 +602,21 @@ class LMP:
                 self.avoidance_map = avoidance_map
                 self.gripper_map = gripper_map
                 update_count += 1
+                total_latency += test2 - test1
 
             if not self.wakeup_flag:
                 with self.init_condition:
                     self.init_condition.notify()
                     self.wakeup_flag = True
-            # 每2秒打印一次更新次数
+            # 每2秒打印一次更新次数和平均延时
             current_time = time.time()
             if current_time - last_log_time >= 2.0:
+                avg_lat = (total_latency / update_count * 1000) if update_count > 0 else 0
                 fps = update_count / (current_time - last_log_time)
-                print(f"{bcolors.OKGREEN}[interfaces.py | {get_clock_time()}] Map update rate: {update_count} updates in {current_time - last_log_time:.2f}s ({fps:.1f} Hz){bcolors.ENDC}")
+                print(f"{bcolors.OKGREEN}[Target Map] {update_count}次更新, "
+                      f"平均延时{avg_lat:.1f}ms, 频率{fps:.1f}Hz{bcolors.ENDC}")
                 update_count = 0
+                total_latency = 0.0
                 last_log_time = current_time
 
 
@@ -449,15 +633,15 @@ class LMP:
             movable_var, affordance_map, avoidance_map, gripper_map = self.get_map()
 
             start_pos = lmp_env.get_ee_pos().copy()  # 直接获取实时位置
-            
-            costmap = self.get_cost_map(lmp_env, affordance_map, avoidance_map)
+
+            costmap = self.get_cost_map(lmp_env, affordance_map, avoidance_map, start_pos)
             
             # Optimize path and log
             lmp_env.slow_planner.optimize(start_pos, costmap, self.shared_queue)
             assert not self.shared_queue.empty(), 'path_voxel is empty'
 
             end_time = time.time()
-            print(f"{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] updated trajectory in {end_time - start_time:.3f}s{bcolors.ENDC}")
+            print(f"{bcolors.OKBLUE}[Slow Planner] 贪婪规划延时{(end_time - start_time)*1000:.1f}ms{bcolors.ENDC}")
 
 
 
@@ -481,8 +665,8 @@ class LMP:
 
                     waypoint = (curr_xyz, rotation, gripper)
                     # execute waypoint
-                    lmp_env.ur5.execute(waypoint, time_sleep)
-                    self.exec_stop_event.set()
+                    #lmp_env.ur5.execute(waypoint, time_sleep)
+                    #self.exec_stop_event.set()
                     break
                 else:
                     continue
@@ -491,7 +675,9 @@ class LMP:
             rotation = lmp_env.ur5.get_tcp()[3:]
             current_voxel_xyz = np.array(lmp_env._world_to_voxel(curr_xyz))
 
+            _fast_start = time.time()
             voxel_xyz,queue_list = lmp_env.fast_planner.generate_fast_point_3d_vectorized(current_voxel_xyz, self.shared_queue, affordable_map, avoidance_map)
+            _fast_elapsed = time.time() - _fast_start
             world_xyz = lmp_env._voxel_to_world(voxel_xyz)
             voxel_xyz = np.round(voxel_xyz).astype(int)
             
@@ -500,13 +686,13 @@ class LMP:
             waypoint = (world_xyz, rotation, gripper)
                 
             # execute waypoint
-            signal = lmp_env.ur5.execute(waypoint, time_sleep)
+            #signal = lmp_env.ur5.execute(waypoint, time_sleep)
 
-            if not signal :
+            '''if not signal :
                 print(f"{bcolors.FAIL}[interfaces.py | {get_clock_time()}] Failed to execute waypoint{bcolors.ENDC}")
                 self.exec_stop_event.set()
                 self.update_stop_event.set()
-                break
+                break'''
 
             self.executed_path_voxel.append(voxel_xyz.copy())
             time.sleep(time_sleep)
@@ -517,7 +703,8 @@ class LMP:
                 final_target = lmp_env._voxel_to_world(queue_list[-1])
             dist2target = np.linalg.norm(curr_xyz - final_target)
 
-            print(f'{bcolors.OKBLUE}[interfaces.py | {get_clock_time()}] completed waypoint: (wp: {waypoint[0].round(3)}, voxel: {voxel_xyz.round(3)}, actual: {movable_var["_position_world"].round(3)}, target: {final_target.round(3)}, start: {current_voxel_xyz}, dist2target: {dist2target.round(3)}){bcolors.ENDC}')
+            print(f'{bcolors.OKBLUE}[Fast Planner] 选点延时{_fast_elapsed*1000:.1f}ms, '
+                  f'wp:{waypoint[0].round(3)}, dist2target:{dist2target.round(3)}{bcolors.ENDC}')
 
             # check if the movement is finished 1.5cm
             if dist2target <= 0.015 or self.shared_queue.size() <= 1:
@@ -525,8 +712,8 @@ class LMP:
                 self.exec_stop_event.set()
                 self.update_stop_event.set()
                 waypoint = (final_target, rotation, gripper)
-                lmp_env.ur5.execute(waypoint, time_sleep)
-                lmp_env.ur5.gripper.gripper_close()
+                #lmp_env.ur5.execute(waypoint, time_sleep)
+                #lmp_env.ur5.gripper.gripper_close()
                 break
 
 
@@ -552,11 +739,17 @@ class LMP:
                 time.sleep(5)
                 continue
             if action == "close the gripper" or action == "close gripper":
-                lmp_env.ur5.gripper.gripper_close()
+                if hasattr(lmp_env.ur5, 'gripper') and lmp_env.ur5.gripper is not None:
+                    lmp_env.ur5.gripper.gripper_close()
+                else:
+                    print("Gripper not connected, skipping gripper close.")
                 time.sleep(5)
                 continue
             if action == "open the gripper" or action == "open gripper":
-                lmp_env.ur5.gripper.gripper_open()
+                if hasattr(lmp_env.ur5, 'gripper') and lmp_env.ur5.gripper is not None:
+                    lmp_env.ur5.gripper.gripper_open()
+                else:
+                    print("Gripper not connected, skipping gripper open.")
                 time.sleep(5)
                 continue
 
@@ -577,6 +770,30 @@ class LMP:
                     json.dump(action_state, json_file)
 
             print(action_state)
+
+            # Initialize/reset ADA adaptive weight adjuster
+            if (hasattr(lmp_env.slow_planner.config, 'adaptive_weights_enabled') and
+                lmp_env.slow_planner.config.adaptive_weights_enabled and
+                self.adaptive_weight_adjuster is None):
+                # Get base weights from configuration
+                base_weights = {
+                    'obstacle': lmp_env.slow_planner.config.obstacle_map_weight,
+                    'target': lmp_env.slow_planner.config.target_map_weight,
+                    'direction': lmp_env.fast_planner.beta
+                }
+                # Create adaptive weight adjuster
+                from LMP import AdaptiveWeightAdjuster
+                self.adaptive_weight_adjuster = AdaptiveWeightAdjuster(
+                    base_weights,
+                    k_obs=lmp_env.slow_planner.config.adaptive_k_obs,
+                    tau_obs=lmp_env.slow_planner.config.adaptive_tau_obs,
+                    k_target=lmp_env.slow_planner.config.adaptive_k_target,
+                    tau_target=lmp_env.slow_planner.config.adaptive_tau_target,
+                    local_radius=lmp_env.slow_planner.config.adaptive_local_radius
+                )
+            # Reset for new task
+            if self.adaptive_weight_adjuster is not None:
+                self.adaptive_weight_adjuster.reset()
 
             if not moving:
                 self.rotation_generate(action,lmp_env,image_share)

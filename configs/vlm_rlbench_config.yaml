@@ -14,7 +14,7 @@ planner:
   pushing_skip_per_k: 5
   nearby_radius: 1
 
-  map_size: 200
+  map_size: 250
   
   fast_num_candidates: 50
   fast_alpha: 10.0
@@ -22,23 +22,35 @@ planner:
   avoid_weight: 100.0
   fast_radius: 2
 
+  # ADA: Adaptive Density-Aware 自适应权重调整
+  adaptive_weights_enabled: true
+  adaptive_k_obs: 2.0          # 障碍物密度缩放因子 k_obs
+  adaptive_tau_obs: 0.15       # 障碍物密度阈值 τ_obs ∈ [0, 1]，低于此不增加权重
+  adaptive_k_target: 1.0       # 目标距离缩放因子 k_target
+  adaptive_tau_target: 0.2     # 目标距离阈值 τ_target ∈ [0, 1]，超过才显著增加权重
+                               # (归一化后，0.2 ≈ 地图对角线的20%)
+  adaptive_local_radius: 5     # 局部密度计算半径 (体素)
+  # 注：方向权重已改为固定，不再自适应调整
+
 visualizer:
   save_dir: ./visualizations
-  map_size: 200
+  map_size: 250
 
 lmp_config:
   env:
-    map_size: 200
+    map_size: 250
     max_plan_iter: 1
     visualize: True
   lmps:
     vision_prompt_fname: action_state
     planner_prompt_fname : planner_mode
     rotation_prompt_fname : rotation
-    vision_model: qwen-vl-max
+    vision_model: qwen2.5-vl-72b-instruct
     max_tokens: 2048
     temperature: 0
     query_prefix: "# Query : "
     query_suffix: "."
     stop: "# done"
     load_cache: True
+
+    

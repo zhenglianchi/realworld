@@ -1,15 +1,21 @@
 import numpy as np
+import time
 
 class Fast_PathPlanner:
     def __init__(self, planner_config):
         self.config = planner_config
-        self.radius = self.config.fast_radius          
-        self.num_candidates = self.config.fast_num_candidates  
+        self.radius = self.config.fast_radius
+        self.num_candidates = self.config.fast_num_candidates
         self.beta = self.config.fast_beta             # 方向权重
         self.alpha = self.config.fast_alpha           # 可达性权重
         self.avoid_weight = self.config.avoid_weight  # 避障惩罚权重
 
+        # Adaptive weights (ADA method) - updated by LMP
+        self.adaptive_beta = None
+        self.adaptive_avoid_weight = None
+
     def generate_fast_point_3d_vectorized(self, current_pos, share_queue, affordable_map, avoidance_map):
+        _fast_start = time.time()
         current_pos = np.array(current_pos, dtype=int)
         slow_points = np.array(share_queue.get_all().copy())
         #print(slow_points)
@@ -42,7 +48,7 @@ class Fast_PathPlanner:
         direction_vec = slow_target - current_pos
         direction_norm = np.linalg.norm(direction_vec)
         if direction_norm < 1e-6:
-            print("Target reached or invalid direction. Returning current position.")
+            print("[LOG][快规划] 目标已到达，跳过规划")
             return current_pos.copy(), slow_points.copy()
         unit_dir = direction_vec / direction_norm
 
@@ -85,7 +91,7 @@ class Fast_PathPlanner:
             pass
 
         if len(valid_candidates) == 0:
-            print("No valid candidates after adding slow_target.")
+            print("[LOG][快规划] 无有效候选点，返回当前位置")
             return current_pos.copy()
 
         # 4. 计算方向一致性得分
@@ -111,14 +117,20 @@ class Fast_PathPlanner:
         ]
 
         # 7. 综合评分,越小越好
+        # Use adaptive weights if available (ADA method), else use fixed weights
+        beta_used = self.adaptive_beta if self.adaptive_beta is not None else self.beta
+        avoid_used = self.adaptive_avoid_weight if self.adaptive_avoid_weight is not None else self.avoid_weight
+
         total_scores = (
-            self.beta * angle_penalty +
+            beta_used * angle_penalty +
             self.alpha * afford_values +
-            self.avoid_weight * avoid_values
+            avoid_used * avoid_values
         )
 
         # 8. 选择最优
         best_idx = np.argmin(total_scores)
         best_point = valid_candidates[best_idx]
 
+        _fast_elapsed = time.time() - _fast_start
+        print(f"[LOG][快规划] 快系统局部选择延时: {_fast_elapsed*1000:.1f}ms, 候选点数: {len(valid_candidates)}")
         return best_point, slow_points.copy()

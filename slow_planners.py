@@ -3,6 +3,7 @@ import numpy as np
 from scipy.signal import savgol_filter
 from utils import calc_curvature
 import queue
+import time
 
 class Slow_PathPlanner:
     """
@@ -21,6 +22,7 @@ class Slow_PathPlanner:
         Returns:
             path: (n, 3) np.ndarray, path
         """
+        _slow_start = time.time()
         # make copies
         _costmap = costmap.copy()
         # get stop criteria
@@ -45,6 +47,8 @@ class Slow_PathPlanner:
         raw_path = np.array(path)
         # postprocess path
         self._postprocess_path(raw_path, path_voxel)
+        _slow_elapsed = time.time() - _slow_start
+        print(f"[LOG][慢规划] 贪婪路径规划延时: {_slow_elapsed*1000:.1f}ms, 路径点数: {len(raw_path)}, 步数: {len(path)}")
     
     def _get_stop_criteria(self):
         def no_nearby_equal_criteria(current_pos, costmap, stop_threshold):

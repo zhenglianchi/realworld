@@ -6,7 +6,7 @@ from fast_planners import Fast_PathPlanner
 import time
 from scipy.ndimage import distance_transform_edt
 import open3d as o3d
-from VLM_demo import  show_box_cv2,show_mask_cv2,encode_image_PIL, get_world_bboxs_list,show_mask,show_box,process_visual_prompt,set_visual_prompt,predict_mask,encode_image,resize_bbox_to_original,smart_resize,get_response
+from VLM_demo import  show_box_cv2,show_mask_cv2,encode_image_PIL, get_world_bboxs_list,show_mask,show_box,process_visual_prompt,set_visual_prompt,predict_mask,encode_image,resize_bbox_to_original,smart_resize,get_response,generate_augmented_prompts
 from PIL import Image
 from scipy.ndimage import binary_erosion
 import matplotlib.pyplot as plt
@@ -57,7 +57,8 @@ class LMP_interface():
 
     # calculate size of each voxel (resolution)
     self._resolution = (self.ur5.workspace_bounds_max - self.ur5.workspace_bounds_min) / self._map_size
-    print(f'Voxel resolution: {self._resolution}')
+    print(f'[LOG][分辨率] 体素图分辨率: {self._resolution} m/voxel, 地图尺寸: {self._map_size}x{self._map_size}x{self._map_size}')
+    print(f'[LOG][分辨率] 工作空间范围: min={self.ur5.workspace_bounds_min}, max={self.ur5.workspace_bounds_max}')
 
 
   def get_obs(self, obj_pc, label):
@@ -170,14 +171,25 @@ class LMP_interface():
       for i in range(60):
           self.camera.get_aligned_images()
       frame, bbox_entities = self.qwen_vl_box(instruction)
-      print(bbox_entities)
+      print(f"VLM输出检测框数量: {len(bbox_entities)}")
+      # 数据增强：为每个原始框生成3个随机裁剪增强样本
+      augmented_bbox_entities = generate_augmented_prompts(
+          frame, bbox_entities, num_aug=3, min_crop=0.80, max_crop=0.95
+      )
+      print(f"增强后总检测框数量: {len(augmented_bbox_entities)} (原始+{len(augmented_bbox_entities)-len(bbox_entities)} 个增强样本)")
       print("正在处理yoloe视觉提示...........")
-      visuals,objects,label2id,id2label = process_visual_prompt(bbox_entities)
+      visuals,objects,label2id,id2label = process_visual_prompt(augmented_bbox_entities)
       set_visual_prompt(frame, visuals, objects)
       #self.objects = objects
       
       print("视觉预处理完成")
-      
+
+      # 视觉检测统计（每5s汇总输出一次）
+      _vis_count = 0
+      _vis_total_latency = 0.0
+      _vis_total_objects = 0
+      _vis_last_report = time.time()
+
       while not finished_event.is_set():
         start_time = time.time()
 
@@ -187,7 +199,23 @@ class LMP_interface():
 
         # 这里创建的点云，原点为相机坐标系中心
         pcd_ = self.camera.create_point_cloud_from_depth_image(meter_depth)
+        _yoloe_start = time.time()
         boxes, masks_ = predict_mask(frame)
+        _yoloe_elapsed = time.time() - _yoloe_start
+
+        # 累积统计，每5s汇总输出
+        _vis_count += 1
+        _vis_total_latency += _yoloe_elapsed
+        _vis_total_objects += len(boxes)
+        if time.time() - _vis_last_report >= 5.0:
+            avg_lat = _vis_total_latency / _vis_count if _vis_count > 0 else 0
+            avg_obj = _vis_total_objects / _vis_count if _vis_count > 0 else 0
+            print(f"[LOG][视觉检测] 近5s统计: {_vis_count}次检测, "
+                  f"平均延时{avg_lat*1000:.1f}ms, 平均检测{avg_obj:.1f}个物体")
+            _vis_count = 0
+            _vis_total_latency = 0.0
+            _vis_total_objects = 0
+            _vis_last_report = time.time()
         detect_objects = []
         for (box_entity, mask) in zip(boxes, masks_):
             id = int(box_entity[5])

@@ -24,12 +24,13 @@ voxel_visualizer = VoxelSceneVisualizer(
 
 init_pose = np.array([   0.432,    -0.169   ,   0.21,      3.02 ,   -0.12 ,   0.02])
 
-ur5 = UR_BASE("192.168.111.10",fisrt_tcp=init_pose)
+ur5 = UR_BASE("192.168.111.10",fisrt_tcp=None)
+
 time.sleep(5)
 
 voxposer_ui, lmp_env = setup_LMP(config,ur5)
 
-instruction = "only grasp the white cube and keep at least 10 cm away from the glass cup and the yellow foil."
+instruction = "only grasp the white cube."
 
 finished_event = threading.Event()
 condition = threading.Condition()

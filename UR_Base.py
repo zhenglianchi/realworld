@@ -15,8 +15,8 @@ class UR_BASE(object):
         if fisrt_tcp is not None:
             self.init_pose = fisrt_tcp
             self.moveL(fisrt_tcp,speed=0.1,acc=0.05)
-        self.gripper = OmniPicker_Interface()
-        self.gripper.connect()
+        #self.gripper = OmniPicker_Interface()
+        #self.gripper.connect()
 
     def reset_to_default_pose(self):
         self.servoL(self.init_pose, time=2)
@@ -115,10 +115,11 @@ class UR_BASE(object):
         # 0->1 闭合
         # 1->0 张开
         print(gripper_state, gripper)
-        if gripper_state == 0 and gripper == 1:
-            self.gripper.gripper_close()
-        elif gripper_state == 1 and gripper == 0:
-            self.gripper.gripper_open()
+        if hasattr(self, 'gripper') and self.gripper is not None:
+            if gripper_state == 0 and gripper == 1:
+                self.gripper.gripper_close()
+            elif gripper_state == 1 and gripper == 0:
+                self.gripper.gripper_open()
         
         return True
 
@@ -148,4 +149,6 @@ class UR_BASE(object):
         return T
     
     def get_gripper_state(self):
+        if not hasattr(self, 'gripper') or self.gripper is None:
+            return 0  # 默认返回张开状态
         return self.gripper.gripper_state

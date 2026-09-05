@@ -14,9 +14,17 @@ import re
 from ultralytics import YOLOE
 from ultralytics.models.yolo.yoloe.predict_vp import YOLOEVPSegPredictor
 import io
+import os
 import cv2
 
-model = YOLOE("yoloe-11s-seg.pt").cuda()
+_model = None
+
+def get_model():
+    global _model
+    if _model is None:
+        model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "yoloe-11s-seg.pt")
+        _model = YOLOE(model_path).cuda()
+    return _model
 
 def process_visual_prompt(bbox_entities):
     bbox = np.array([item["bbox"] for item in bbox_entities])
@@ -45,13 +53,14 @@ def process_visual_prompt(bbox_entities):
     return visuals,classes,label2id,cls_label
 
 def set_visual_prompt(source_image,prompts,classes):
-    model.predict(source_image, prompts=prompts, predictor=YOLOEVPSegPredictor,return_vpe=True, save=False, verbose=False, imgsz=(480,640))
-    model.set_classes(classes, model.predictor.vpe)
-    model.predictor = None  # remove VPPredictor
+    m = get_model()
+    m.predict(source_image, prompts=prompts, predictor=YOLOEVPSegPredictor,return_vpe=True, save=False, verbose=False, imgsz=(480,640))
+    m.set_classes(classes, m.predictor.vpe)
+    m.predictor = None  # remove VPPredictor
 
 def predict_mask(target_image):
     input_image = torch.from_numpy(target_image).permute(2, 0, 1).unsqueeze(0).float().cuda() / 255.0
-    result = model.predict(input_image, save=False, conf=0.3, iou=0.05, verbose=False, imgsz=(480,640))
+    result = get_model().predict(input_image, save=False, conf=0.3, iou=0.05, verbose=False, imgsz=(480,640))
     if result[0].masks is None:
         #print("No mask detected!")
         return [], []
@@ -212,7 +221,7 @@ def get_world_bboxs_list(image_path,instruction):
     '''
 
     completion = client.chat.completions.create(
-        model="qwen-vl-max", 
+        model="qwen2.5-vl-72b-instruct",
         messages=[{"role": "user","content": [
                 {"type": "text","text": prompt},
                 {"type": "image_url",
@@ -280,3 +289,61 @@ def show_box_cv2(box, image, label=None, color=(0, 0, 255), thickness=1):
     if label:
         cv2.putText(image, label, (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 1)
     return image
+
+
+def generate_augmented_prompts(original_image, bbox_entities, num_aug=3, min_crop=0.80, max_crop=0.95):
+    """
+    从VLM输出的检测框生成增强提示，包含原始框和num_aug个随机裁剪增强样本。
+
+    对每个检测框：
+    1. 裁剪出原始框区域
+    2. 生成num_aug个随机裁剪，裁剪尺寸占原始框的[min_crop, max_crop]比例
+    3. 随机偏移裁剪框位置，保持比例在范围内
+    4. 将原始框和所有增强框合并为最终提示列表
+
+    Args:
+        original_image: PIL Image or numpy array, 原始完整图像
+        bbox_entities: list[dict], 每个元素 {"bbox": [x1,y1,x2,y2], "label": "label"}
+        num_aug: int, 每个原始框生成多少增强样本，默认3
+        min_crop: float, 最小裁剪比例，默认0.80
+        max_crop: float, 最大裁剪比例，默认0.95
+
+    Returns:
+        augmented_entities: list[dict], 增强后的实体列表，包含原始+所有增强
+    """
+    augmented_entities = []
+
+    # 添加原始实体
+    for entity in bbox_entities:
+        # 原始框加入结果
+        augmented_entities.append(entity.copy())
+        x1, y1, x2, y2 = entity["bbox"]
+        label = entity["label"]
+        orig_w = x2 - x1
+        orig_h = y2 - y1
+
+        # 为每个原始框生成num_aug个随机裁剪增强
+        for i in range(num_aug):
+            # 随机采样裁剪比例
+            crop_scale = np.random.uniform(min_crop, max_crop)
+            crop_w = int(orig_w * crop_scale)
+            crop_h = int(orig_h * crop_scale)
+
+            # 随机采样偏移（保证裁剪框仍在原始框内）
+            # 偏移范围: 0 ~ (orig - crop)
+            dx = np.random.randint(0, orig_w - crop_w + 1)
+            dy = np.random.randint(0, orig_h - crop_h + 1)
+
+            # 计算新框坐标（相对于原图）
+            new_x1 = x1 + dx
+            new_y1 = y1 + dy
+            new_x2 = new_x1 + crop_w
+            new_y2 = new_y1 + crop_h
+
+            # 添加增强样本，标签相同
+            augmented_entities.append({
+                "bbox": [new_x1, new_y1, new_x2, new_y2],
+                "label": label
+            })
+
+    return augmented_entities
